@@ -72,6 +72,8 @@
   button:disabled{opacity:.4;cursor:default;transform:none}
   button.primary{background:var(--accent-press);border-color:var(--accent-deep);color:#fff;font-weight:600}
   button.primary:hover{background:var(--accent);color:#fff}
+  button.danger{background:var(--err);border-color:var(--err);color:#fff;font-weight:600}
+  button.danger:hover{background:#ff7b72;border-color:#ff7b72;color:#fff}
   button.sm{padding:5px 9px;font-size:var(--fs-xs)}
   button svg.ic{font-size:15px}
   button.toggle.on{background:rgba(77,107,254,.16);border-color:var(--accent);color:var(--accent)}
@@ -97,6 +99,7 @@
   .acc.OK{border-left-color:var(--ok)} .acc.WAIT{border-left-color:var(--warn)}
   .acc.INVALID,.acc.EXPIRED,.acc.ERROR{border-left-color:var(--err)}
   .acc .id{font-weight:600;font-size:var(--fs-sm)} .acc .meta{color:var(--muted);font-size:var(--fs-xs);font-family:var(--mono)}
+  .acc-label{font-weight:600;color:var(--accent);font-size:var(--fs-sm)}
   .badge{font-size:var(--fs-xs);font-weight:700;padding:3px 9px;border-radius:4px;display:inline-flex;align-items:center;gap:5px}
   .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
   .badge.OK{background:rgba(63,185,80,.16);color:#56d364} .badge.WAIT{background:rgba(210,153,34,.18);color:#e3b341}
@@ -211,6 +214,7 @@
   <section id="tab-accounts" class="panel" role="tabpanel" aria-labelledby="t-accounts">
     <div class="card full">
       <h2><svg class="ic"><use href="#i-accounts"/></svg>Аккаунты DeepSeek <span class="spacer"></span>
+        <span class="hint" id="accUpdated" style="margin:0 8px 0 0"></span>
         <button class="sm" id="checkAllAcc"><svg class="ic"><use href="#i-check"/></svg>проверить все</button></h2>
       <div id="accList"><span class="hint">загрузка…</span></div>
       <div class="import-box">
@@ -339,12 +343,17 @@ async function loadAccountsList(){
     if(!j.accounts||!j.accounts.length){ list.innerHTML='<div class="onboard">Пока нет аккаунтов. Добавьте первый через импорт ниже.</div>'; return; }
     list.innerHTML=j.accounts.map(a=>{
       const meta=a.resetAt?('лимит до '+fmtResetAt(a.resetAt)):(a.exp?fmtExp(a.exp):'');
-      return `<div class="acc ${esc(a.status)}"><span class="id">${esc(a.id)}</span><span class="badge ${esc(a.status)}">${accStLabel(a.status)}</span><span class="meta">…${esc(a.preview||'')}</span><span class="meta">${esc(meta)}</span><span class="spacer"></span>
+      const email=a.email?`<span class="meta">${esc(a.email)}</span>`:'';
+      const labelHtml=a.label?`<span class="acc-label">${esc(a.label)}</span>`:'';
+      return `<div class="acc ${esc(a.status)}"><span class="id">${esc(a.id)}</span>${labelHtml}<span class="badge ${esc(a.status)}">${accStLabel(a.status)}</span>${email}<span class="meta">…${esc(a.preview||'')}</span><span class="meta">${esc(meta)}</span><span class="spacer"></span>
+        <button class="sm" data-label="${esc(a.id)}" title="Задать имя">✎</button>
         <button class="sm" data-check="${esc(a.id)}" aria-label="Проверить ${esc(a.id)}">${icon('i-check')}проверить</button>
         <button class="sm" data-del="${esc(a.id)}" aria-label="Удалить ${esc(a.id)}">${icon('i-trash')}</button></div>`;
     }).join('');
-  }catch{ list.innerHTML='<div class="hint err-text">Не удалось загрузить аккаунты</div>'; }
+    setAccUpdated();
+  }catch{ list.innerHTML='<div class="hint err-text">Не удалось загрузить аккаунты. <button class="sm" onclick="loadAccountsList()">'+icon('i-refresh')+'Повторить</button></div>'; }
 }
+function setAccUpdated(){ const e=$('#accUpdated'); if(e) e.textContent='обновлено '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 $('#checkAllAcc').onclick=async()=>{
   const b=$('#checkAllAcc'); b.disabled=true;
   try{ const j=await (await fetch(origin+'/api/accounts')).json();
@@ -361,9 +370,25 @@ $('#importBtn').onclick=async()=>{
 };
 document.addEventListener('click', async e=>{
   const t=e.target.closest('button'); if(!t) return;
+  if(t.dataset.label!==undefined){
+    const acc=t.closest('.acc'); if(!acc) return;
+    const cur=acc.querySelector('.acc-label')?.textContent||'';
+    const inp=document.createElement('input'); inp.type='text'; inp.value=cur; inp.placeholder='имя аккаунта'; inp.style.cssText='max-width:150px;padding:3px 7px';
+    acc.insertBefore(inp, acc.querySelector('.spacer')); inp.focus(); inp.select();
+    inp.addEventListener('keydown', async ev=>{
+      if(ev.key==='Enter'){ ev.preventDefault();
+        try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.label)+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:inp.value})}); toast('Имя сохранено','ok'); }catch{ toast('Ошибка','err'); }
+        loadAccountsList();
+      } else if(ev.key==='Escape'){ loadAccountsList(); }
+    });
+    inp.addEventListener('blur', ()=>loadAccountsList()); // убрать input, если кликнули мимо
+    return;
+  }
   if(t.dataset.check){ const acc=t.closest('.acc'); const badge=acc&&acc.querySelector('.badge'); if(badge){ badge.className='badge checking'; badge.textContent='проверка'; } t.disabled=true;
     try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.check)+'/check',{method:'POST'}); }catch{} await loadAccountsList(); await loadHealth(); return; }
-  if(t.dataset.del){ if(!confirm('Удалить аккаунт '+t.dataset.del+'?')) return; t.disabled=true;
+  if(t.dataset.del){
+    if(t.dataset.confirm!=='1'){ t.dataset.confirm='1'; t.classList.add('danger'); t.innerHTML=icon('i-trash')+'точно?'; setTimeout(()=>{ if(t.dataset.confirm==='1'){ t.dataset.confirm=''; t.classList.remove('danger'); t.innerHTML=icon('i-trash'); } },3000); return; }
+    t.disabled=true;
     try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.del),{method:'DELETE'}); toast('Удалён','ok'); }catch{ toast('Ошибка','err'); } loadAccountsList(); loadHealth(); return; }
 });
 setInterval(()=>{ if($('#tab-accounts').classList.contains('active')) loadAccountsList(); }, 20000);
@@ -379,7 +404,18 @@ async function loadModels(){
       const caps=(c.reasoning?'<span class="cap r" title="reasoning">R</span>':'')+(c.search?'<span class="cap s" title="web-поиск">S</span>':'');
       return `<span class="chip" data-model="${esc(m.id)}" title="клик — копировать"><span class="id">${esc(m.id)}</span><span class="caps">${caps}</span></span>`;
     }).join('')||'<span class="hint err-text">не удалось загрузить</span>';
-  }catch{ list.innerHTML='<span class="hint err-text">не удалось загрузить</span>'; }
+  }catch{ list.innerHTML='<span class="hint err-text">не удалось загрузить. <button class="sm" onclick="loadModels()">'+icon('i-refresh')+'Повторить</button></span>'; }
+}
+// #chatModel наполняется реальными моделями из /v1/models; выбор сохраняется в localStorage
+async function populateChatModels(){
+  const sel=$('#chatModel'); if(!sel) return;
+  try{
+    const j=await (await fetch(apiBase+'/models')).json();
+    const data=j.data||[]; if(!data.length) return;
+    const saved=localStorage.getItem('ds_model');
+    sel.innerHTML=data.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
+    if(saved && data.some(m=>m.id===saved)) sel.value=saved;
+  }catch{ /* оставляем статичный fallback-список */ }
 }
 document.addEventListener('click', e=>{ const c=e.target.closest('.chip[data-model]'); if(c) copyText(c.dataset.model); });
 
@@ -400,7 +436,14 @@ function bubbleEl(m){
   const c=document.createElement('div'); c.className='body';
   if(m.role==='assistant' && !m.err && m.done){ const html=mdRender(m.content); if(html){ c.className='body md'; c.innerHTML=html; } else { c.textContent=m.content; d.classList.add('plain'); } }
   else { c.textContent=m.content; if(m.role!=='user') d.classList.add('plain'); }
-  d.appendChild(c); d._c=c; return d;
+  d.appendChild(c); d._c=c;
+  if(m.role==='assistant' && m.done && (m.content||'').trim()){
+    if(c.classList.contains('md')) addCopyButtons(c);
+    const cp=document.createElement('button'); cp.className='sm'; cp.type='button'; cp.style.cssText='margin-top:6px;padding:3px 8px;font-size:11px';
+    cp.innerHTML=icon('i-copy')+'копировать'; cp.onclick=()=>copyText(m.content);
+    d.appendChild(cp);
+  }
+  return d;
 }
 function renderChat(){
   const box=$('#msgs');
@@ -445,7 +488,9 @@ async function sendChat(){
         }catch{} }
     }
     if(!asst.content && !asst.reasoning){ chatHistory.pop(); node.remove(); toast('Пустой ответ','err'); }
-    else { asst.done=true; if(node._think) node._think.open=false; const html=mdRender(asst.content); if(html){ node.classList.remove('plain'); node._c.className='body md'; node._c.innerHTML=html; } if(atBottom()) box.scrollTop=box.scrollHeight; }
+    else { asst.done=true; if(node._think) node._think.open=false; const html=mdRender(asst.content); if(html){ node.classList.remove('plain'); node._c.className='body md'; node._c.innerHTML=html; addCopyButtons(node._c); }
+      if((asst.content||'').trim()){ const cp=document.createElement('button'); cp.className='sm'; cp.type='button'; cp.style.cssText='margin-top:6px;padding:3px 8px;font-size:11px'; cp.innerHTML=icon('i-copy')+'копировать'; cp.onclick=()=>copyText(asst.content); node.appendChild(cp); }
+      if(atBottom()) box.scrollTop=box.scrollHeight; }
   }catch(e){
     if(e.name==='AbortError'){ if(!asst.content&&!asst.reasoning){ chatHistory.pop(); node.remove(); } else asst.done=true; }
     else { asst.content='⚠ '+e.message; node._c.textContent=asst.content; node.classList.add('err'); asst.err=true; }
@@ -459,10 +504,28 @@ $('#clearChat').onclick=async()=>{
   try{ await fetch(origin+'/reset-session?agent='+encodeURIComponent(AGENT_ID),{method:'POST'}); }catch{}
 };
 
+// ── Утилиты UI ───────────────────────────────────────────────────────────────
+function addCopyButtons(container){
+  container.querySelectorAll('pre').forEach(pre=>{
+    if(pre.querySelector('.code-copy')) return;
+    pre.style.position='relative';
+    const b=document.createElement('button'); b.className='code-copy sm'; b.type='button'; b.textContent='copy';
+    b.style.cssText='position:absolute;top:6px;right:6px;padding:2px 7px;font-size:11px';
+    b.onclick=()=>{ const code=pre.querySelector('code'); copyText(code?code.textContent:pre.textContent); };
+    pre.appendChild(b);
+  });
+}
+function autoGrow(el){ if(!el) return; const fn=()=>{ el.style.height='auto'; const mh=parseInt(getComputedStyle(el).maxHeight)||9999; el.style.height=Math.min(el.scrollHeight, mh)+'px'; }; el.addEventListener('input',fn); }
+
 // ── Старт ──────────────────────────────────────────────────────────────────
 renderChat();
+populateChatModels();
+$('#chatModel').addEventListener('change',()=>localStorage.setItem('ds_model',$('#chatModel').value));
+autoGrow($('#chatInput')); autoGrow($('#importText'));
 showTab((location.hash||'#chat').slice(1)||'chat');
 loadHealth(); setInterval(loadHealth, 15000);
+// #28 авто-обновление Обзора (модели/auth), пока вкладка активна
+setInterval(()=>{ const ov=$('#tab-overview'); if(ov&&ov.classList.contains('active')){ loadModels(); loadAuth(); } }, 30000);
 </script>
 </body>
 </html>

@@ -6,12 +6,15 @@ const PROXY_URL = API_BASE + '/api/accounts/import';
 let current = null; // перехваченный набор кредов {token,cookie,hif_*,wasmUrl}
 
 function setStatus(cls, text) { $('status').className = 'status ' + cls; $('status').textContent = text; }
+function setSrvDot(online) { const d = $('srvDot'); if (d) { d.className = 'srv-dot ' + (online ? 'online' : 'offline'); d.title = online ? 'Сервер онлайн (:9655)' : 'Сервер недоступен (:9655)'; } }
+function setCredButtons(has) { for (const id of ['btnAdd', 'btnCopy', 'btnSave']) { const b = $(id); if (b) b.disabled = !has; } }
 
 function render(cap) {
     if (!cap || !cap.token || !cap.cookie) {
         setStatus('warn', '⚠️ Откройте chat.deepseek.com и ОТПРАВЬТЕ любое сообщение, затем нажмите кнопку.');
         $('jsonPreview').textContent = '{ }';
         $('detail').textContent = 'Креды появятся после запроса к DeepSeek';
+        setCredButtons(false);
         return null;
     }
     const auth = { token: cap.token, hif_dliq: cap.hif_dliq || '', hif_leim: cap.hif_leim || '', cookie: cap.cookie, wasmUrl: cap.wasmUrl };
@@ -23,6 +26,7 @@ function render(cap) {
     }, null, 2);
     setStatus('ok', '✅ Перехвачено: token + cookie' + (auth.hif_leim ? ' + hif' : '') + ' — готово');
     $('detail').textContent = cap._t ? ('Обновлено: ' + new Date(cap._t).toLocaleTimeString()) : '';
+    setCredButtons(true);
     return auth;
 }
 
@@ -55,7 +59,7 @@ function renderPool(list) {
         idEl.className = 'id'; idEl.textContent = a.id;
 
         const emailEl = document.createElement('span');
-        emailEl.className = 'email'; emailEl.textContent = a.email || '—'; emailEl.title = a.email || '';
+        emailEl.className = 'email'; emailEl.textContent = a.label || a.email || '—'; emailEl.title = a.email || a.label || '';
 
         const badge = document.createElement('span');
         badge.className = 'badge ' + (a.status || '').toLowerCase(); badge.textContent = a.status || '—';
@@ -73,8 +77,10 @@ async function loadPool() {
     try {
         const r = await fetch(API_BASE + '/api/accounts');
         const j = await r.json();
+        setSrvDot(true);
         renderPool(j.accounts || []);
     } catch {
+        setSrvDot(false);
         $('poolTitle').textContent = 'Пул аккаунтов';
         setEmpty('FreeDeepseekAPI недоступен на :9655');
     }
@@ -100,6 +106,12 @@ async function deleteAccount(id) {
 
 // делегирование кликов в панели (check / удаление с инлайн-подтверждением)
 $('pool').addEventListener('click', (e) => {
+    const emailEl = e.target.closest('.email');
+    if (emailEl && emailEl.textContent && emailEl.textContent !== '—') {
+        const full = emailEl.title || emailEl.textContent;
+        navigator.clipboard.writeText(full).then(() => { const o = emailEl.textContent; emailEl.textContent = '✓ скопировано'; setTimeout(() => { emailEl.textContent = o; }, 900); });
+        return;
+    }
     const btn = e.target.closest('.acc-btn'); if (!btn) return;
     const row = btn.closest('.pool-row'); const id = row && row.dataset.id; if (!id) return;
     const act = btn.dataset.act;
@@ -120,6 +132,7 @@ async function checkAll() {
     $('btnCheckAll').disabled = false;
 }
 $('btnCheckAll').addEventListener('click', checkAll);
+$('btnDashboard').addEventListener('click', () => { chrome.tabs.create({ url: API_BASE + '/dashboard' }); });
 
 // ── Главная кнопка — добавить перехваченные креды + авто-валидация ──
 $('btnAdd').addEventListener('click', async () => {

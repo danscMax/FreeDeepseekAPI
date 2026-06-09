@@ -44,10 +44,21 @@
     .acc-btn.danger:hover { background: #b71c1c44; color: #ef5350; }
     .acc-btn.confirm { background: #b71c1c; color: #fff; border-color: #c62828; }
     .pool-empty { color: #666; font-size: 11px; text-align: center; padding: 10px; }
+    .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .hdr h1 { margin: 0; }
+    .srv-dot { width: 9px; height: 9px; border-radius: 50%; background: #666; flex: none; }
+    .srv-dot.online { background: #66bb6a; box-shadow: 0 0 5px #2e7d32; }
+    .srv-dot.offline { background: #ef5350; box-shadow: 0 0 5px #c62828; }
+    .btn-row button:disabled { opacity: 0.45; cursor: default; }
+    .pool-row .email { cursor: pointer; }
+    .pool-row .email:hover { color: #4fc3f7; }
   </style>
 </head>
 <body>
-  <h1>🔑 DeepSeek → FreeDeepseekAPI</h1>
+  <div class="hdr">
+    <h1>🔑 DeepSeek → FreeDeepseekAPI</h1>
+    <span id="srvDot" class="srv-dot" title="Статус сервера FreeDeepseekAPI"></span>
+  </div>
   <div class="sub">Откройте <code>chat.deepseek.com</code>, <b>отправьте любое сообщение</b>, затем нажмите кнопку</div>
 
   <div id="status" class="status warn">⏳ Loading...</div>
@@ -71,7 +82,10 @@
   <div class="pool-section">
     <div class="pool-header">
       <span class="title" id="poolTitle">Пул аккаунтов</span>
-      <button id="btnCheckAll" class="link-btn">↻ Проверить все</button>
+      <span style="display:flex; gap:6px">
+        <button id="btnDashboard" class="link-btn">🖥 Дашборд</button>
+        <button id="btnCheckAll" class="link-btn">↻ Проверить все</button>
+      </span>
     </div>
     <div id="pool" class="pool-list"></div>
   </div>

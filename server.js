@@ -264,6 +264,7 @@ function addAccountFromAuth(parsed) {
         hif_dliq: parsed.hif_dliq || '',
         hif_leim: parsed.hif_leim || '',
         email: parsed.email || '',
+        label: parsed.label || '',
     };
     try {
         fs.mkdirSync(MANAGED_AUTH_DIR, { recursive: true });
@@ -296,6 +297,7 @@ function listAccountsPublic() {
         id: a.id,
         status: accountStatusStr(a),
         email: a.config.email || '',
+        label: a.config.label || '',
         exp: decodeTokenInfo(a.config.token).exp,
         resetAt: a.cooldownUntil > Date.now() ? new Date(a.cooldownUntil).toISOString() : null,
         preview: String(a.config.token || '').slice(-6),
@@ -1429,6 +1431,29 @@ const server = http.createServer(async (req, res) => {
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ id, status, email: account.config.email || '', exp: decodeTokenInfo(account.config.token).exp }));
+            return;
+        }
+
+        // POST /api/accounts/:id/label — set a human-friendly label for the account
+        const mLabel = url.pathname.match(/^\/api\/accounts\/(account_[A-Za-z0-9]+)\/label$/);
+        if (req.method === 'POST' && mLabel) {
+            const id = mLabel[1];
+            const account = accounts.find(a => a.id === id);
+            if (!account) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Account not found' })); return; }
+            let body = '';
+            req.on('data', c => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+            req.on('end', () => {
+                try {
+                    const label = String((JSON.parse(body || '{}').label) || '').slice(0, 80);
+                    account.config.label = label;
+                    // Persist for managed files so the label survives the next pool reload.
+                    if (isManagedFile(account.file)) {
+                        try { fs.writeFileSync(account.file, JSON.stringify(account.config, null, 2), { mode: 0o600 }); }
+                        catch (e) { console.error(`[account:${id}] could not persist label: ${e.message}`); }
+                    }
+                    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, id, label }));
+                } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid label body: ' + e.message })); }
+            });
             return;
         }
 
