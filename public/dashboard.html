@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FreeDeepseekAPI — Дашборд</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234d6bfe' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 8c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 13c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 18c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234d8bff' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 8c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 13c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 18c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous" defer></script>
 <style>
@@ -12,7 +12,7 @@
     --bg:#0d1117; --bg2:#010409; --card:#161b22; --card2:#1c2230; --elev:#21262d;
     --border:#2a2f37; --border2:#3d444d;
     --text:#e6edf3; --muted:#9198a1; --faint:#6e7681;
-    --accent:#4d6bfe; --accent-press:#3b54d4; --accent-deep:#2d3fa0;
+    --accent:#4d8bff; --accent-press:#3a78e6; --accent-deep:#2b5fc4;
     --ok:#3fb950; --warn:#d29922; --err:#f85149;
     --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:22px; --s6:30px;
@@ -223,6 +223,14 @@
         <div class="row" style="margin-top:var(--s2)"><button class="primary" id="importBtn"><svg class="ic"><use href="#i-key"/></svg>Импортировать аккаунт</button></div>
       </div>
     </div>
+    <div class="card full">
+      <h2><svg class="ic"><use href="#i-plug"/></svg>Добавить в FreeLLMAPI</h2>
+      <div class="hint" style="margin-bottom:var(--s3)">Зарегистрировать этот сервис как custom-провайдера в шлюзе: открой дашборд FreeLLMAPI → <b>Keys</b> → «Add a custom OpenAI-compatible model» и вставь Base URL и модели.</div>
+      <div class="row"><label class="k">Base URL</label><div class="val" id="llmBaseUrl">—</div><button class="sm" data-copy="llmBaseUrl" aria-label="Копировать"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+      <div class="row"><label class="k">Модели</label><div class="val" id="llmModels">deepseek-chat, deepseek-reasoner</div><button class="sm" id="copyLlmModels" aria-label="Копировать модели"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+      <div class="row"><label class="k">URL шлюза</label><input id="llmGatewayUrl" placeholder="http://localhost:3001" autocomplete="off" spellcheck="false" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:var(--r);padding:6px 10px;font-family:var(--mono);font-size:var(--fs-xs)"></div>
+      <div class="row" style="margin-top:var(--s3)"><button class="primary" id="addToLlm"><svg class="ic"><use href="#i-plug"/></svg>Добавить в FreeLLMAPI</button></div>
+    </div>
   </section>
 
   <!-- ОБЗОР -->
@@ -277,6 +285,13 @@ const AGENT_ID = (()=>{ let v=localStorage.getItem('ds_agent'); if(!v){ v='dash-
 
 const apiBase = origin+'/v1';
 $('#baseUrl').textContent = apiBase;
+// --- Добавить в FreeLLMAPI (handoff без авторизации) ---
+$('#llmBaseUrl').textContent = apiBase;
+const LLM_MODELS_TEXT = 'deepseek-chat\ndeepseek-reasoner';
+$('#copyLlmModels').onclick = ()=>copyText(LLM_MODELS_TEXT);
+const llmGw = $('#llmGatewayUrl'); llmGw.value = localStorage.getItem('llmGatewayUrl') || 'http://localhost:3001';
+llmGw.onchange = ()=>localStorage.setItem('llmGatewayUrl', llmGw.value.trim());
+$('#addToLlm').onclick = ()=>{ const gw=(llmGw.value.trim()||'http://localhost:3001').replace(/\/+$/,''); copyText(apiBase); window.open(gw,'_blank','noopener'); toast('Base URL скопирован. Вставь в Keys шлюза; модели — кнопкой «копировать».','ok'); };
 
 // ── Вкладки ──────────────────────────────────────────────────────────────
 const TABS=['chat','accounts','overview'];
