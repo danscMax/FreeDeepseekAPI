@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FreeDeepseekAPI — Дашборд</title>
+<title>FreeDeepseekAPI — Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234d6bfe' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 8c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 13c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3Cpath d='M3 18c3-3.5 6-3.5 9 0s6 3.5 9 0'/%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js" integrity="sha384-XQqX/4yiUGu+oyr87jvWzRuqBUK/adrY0DunhL+tID9m/9dwSpV8h9Fk/Sg6ifVQ" crossorigin="anonymous" defer></script>
@@ -93,7 +93,7 @@
   .chip{font-family:var(--mono);font-size:var(--fs-xs);background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;transition:.12s;display:flex;align-items:center;gap:6px;color:var(--text)}
   .chip:hover{border-color:var(--accent)}
 
-  /* аккаунты — прямые полосы статуса */
+  /* accounts — direct status bars */
   .spacer{flex:1}
   .acc{display:flex;align-items:center;gap:var(--s3);padding:10px 12px;background:var(--card2);border:1px solid var(--border);border-left:3px solid var(--faint);border-radius:0 var(--r) var(--r) 0;margin-bottom:6px;flex-wrap:wrap}
   .acc.OK{border-left-color:var(--ok)} .acc.WAIT{border-left-color:var(--warn)}
@@ -122,7 +122,7 @@
   .bubble .role{font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.65;margin-bottom:4px;font-weight:700}
   .bubble.streaming .body::after{content:"▍";animation:blink 1s steps(2) infinite;color:var(--accent)}
   @keyframes blink{50%{opacity:0}}
-  /* панель размышлений */
+  /* reasoning panel */
   .think{margin-bottom:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);overflow:hidden}
   .think summary{cursor:pointer;padding:6px 10px;color:var(--muted);font-weight:600;font-size:var(--fs-xs);display:flex;align-items:center;gap:6px;user-select:none;list-style:none}
   .think summary::-webkit-details-marker{display:none}
@@ -179,85 +179,85 @@
 <div class="wrap">
   <header>
     <h1><svg class="ic logo"><use href="#i-logo"/></svg> FreeDeepseekAPI</h1>
-    <span class="status-pill"><span class="dot" id="statusDot"></span><span id="statusText" role="status" aria-live="polite">проверка…</span></span>
+    <span class="status-pill"><span class="dot" id="statusDot"></span><span id="statusText" role="status" aria-live="polite">checking…</span></span>
   </header>
 
-  <nav class="tabs" role="tablist" aria-label="Разделы">
-    <button class="tab" role="tab" aria-selected="true" aria-controls="tab-chat" id="t-chat" data-tab="chat"><svg class="ic"><use href="#i-chat"/></svg>Чат</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-accounts" id="t-accounts" data-tab="accounts" tabindex="-1"><svg class="ic"><use href="#i-accounts"/></svg>Аккаунты</button>
-    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-overview" id="t-overview" data-tab="overview" tabindex="-1"><svg class="ic"><use href="#i-overview"/></svg>Обзор</button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" aria-selected="true" aria-controls="tab-chat" id="t-chat" data-tab="chat"><svg class="ic"><use href="#i-chat"/></svg>Chat</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-accounts" id="t-accounts" data-tab="accounts" tabindex="-1"><svg class="ic"><use href="#i-accounts"/></svg>Accounts</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-overview" id="t-overview" data-tab="overview" tabindex="-1"><svg class="ic"><use href="#i-overview"/></svg>Overview</button>
   </nav>
 
-  <!-- ЧАТ -->
+  <!-- CHAT -->
   <section id="tab-chat" class="panel active" role="tabpanel" aria-labelledby="t-chat">
     <div class="card full chatbox">
-      <h2><svg class="ic"><use href="#i-chat"/></svg>Плейграунд чата <span class="spacer"></span>
+      <h2><svg class="ic"><use href="#i-chat"/></svg>Chat Playground <span class="spacer"></span>
         <div class="chat-ctrl">
-          <select id="chatModel" aria-label="Модель">
+          <select id="chatModel" aria-label="Model">
             <option value="deepseek-chat">deepseek-chat</option>
             <option value="deepseek-reasoner">deepseek-reasoner</option>
             <option value="deepseek-expert">deepseek-expert</option>
             <option value="deepseek-v4-pro">deepseek-v4-pro</option>
           </select>
-          <button class="sm" id="clearChat" title="Очистить"><svg class="ic"><use href="#i-trash"/></svg></button>
+          <button class="sm" id="clearChat" title="Clear"><svg class="ic"><use href="#i-trash"/></svg></button>
         </div>
       </h2>
-      <div class="msgs" id="msgs" role="log" aria-live="polite" aria-label="История чата"></div>
+      <div class="msgs" id="msgs" role="log" aria-live="polite" aria-label="Chat history"></div>
       <div class="chat-input">
-        <textarea id="chatInput" aria-label="Сообщение" placeholder="Сообщение… (Enter — отправить, Shift+Enter — перенос)"></textarea>
-        <button class="primary" id="sendChat"><svg class="ic"><use href="#i-send"/></svg>Отправить</button>
+        <textarea id="chatInput" aria-label="Message" placeholder="Message… (Enter — send, Shift+Enter — new line)"></textarea>
+        <button class="primary" id="sendChat"><svg class="ic"><use href="#i-send"/></svg>Send</button>
       </div>
     </div>
   </section>
 
-  <!-- АККАУНТЫ -->
+  <!-- ACCOUNTS -->
   <section id="tab-accounts" class="panel" role="tabpanel" aria-labelledby="t-accounts">
     <div class="card full">
-      <h2><svg class="ic"><use href="#i-accounts"/></svg>Аккаунты DeepSeek <span class="spacer"></span>
+      <h2><svg class="ic"><use href="#i-accounts"/></svg>DeepSeek Accounts <span class="spacer"></span>
         <span class="hint" id="accUpdated" style="margin:0 8px 0 0"></span>
-        <button class="sm" id="checkAllAcc"><svg class="ic"><use href="#i-check"/></svg>проверить все</button></h2>
-      <div id="accList"><span class="hint">загрузка…</span></div>
+        <button class="sm" id="checkAllAcc"><svg class="ic"><use href="#i-check"/></svg>check all</button></h2>
+      <div id="accList"><span class="hint">loading…</span></div>
       <div class="import-box">
-        <div class="hint" style="margin-bottom:6px">Добавить аккаунт: в браузере (где вошли в DeepSeek) F12 → Network → отправьте сообщение → правый клик на запросе к <code>chat.deepseek.com/api/...</code> → <b>Copy as cURL</b> (или <b>Save All As HAR</b>) → вставьте сюда.</div>
-        <textarea id="importText" aria-label="cURL или HAR" placeholder="Вставьте сюда cURL или содержимое HAR-файла…" style="min-height:72px;font-family:var(--mono);font-size:var(--fs-xs)"></textarea>
-        <div class="row" style="margin-top:var(--s2)"><button class="primary" id="importBtn"><svg class="ic"><use href="#i-key"/></svg>Импортировать аккаунт</button></div>
+        <div class="hint" style="margin-bottom:6px">Add Account: in browser (where logged into DeepSeek) F12 → Network → send message → right-click request to <code>chat.deepseek.com/api/...</code> → <b>Copy as cURL</b> (or <b>Save All As HAR</b>) → paste here.</div>
+        <textarea id="importText" aria-label="cURL or HAR" placeholder="Paste cURL or HAR file contents here…" style="min-height:72px;font-family:var(--mono);font-size:var(--fs-xs)"></textarea>
+        <div class="row" style="margin-top:var(--s2)"><button class="primary" id="importBtn"><svg class="ic"><use href="#i-key"/></svg>Import Account</button></div>
       </div>
     </div>
   </section>
 
-  <!-- ОБЗОР -->
+  <!-- OVERVIEW -->
   <section id="tab-overview" class="panel" role="tabpanel" aria-labelledby="t-overview">
     <div class="kpis">
-      <div class="kpi"><div class="num" id="kpiStatus">—</div><div class="lbl"><svg class="ic"><use href="#i-refresh"/></svg>статус</div></div>
-      <div class="kpi"><div class="num" id="kpiModels">—</div><div class="lbl"><svg class="ic"><use href="#i-overview"/></svg>моделей</div></div>
-      <div class="kpi"><div class="num" id="kpiAuth">—</div><div class="lbl"><svg class="ic"><use href="#i-accounts"/></svg>аккаунтов онлайн</div></div>
+      <div class="kpi"><div class="num" id="kpiStatus">—</div><div class="lbl"><svg class="ic"><use href="#i-refresh"/></svg>status</div></div>
+      <div class="kpi"><div class="num" id="kpiModels">—</div><div class="lbl"><svg class="ic"><use href="#i-overview"/></svg>models</div></div>
+      <div class="kpi"><div class="num" id="kpiAuth">—</div><div class="lbl"><svg class="ic"><use href="#i-accounts"/></svg>accounts online</div></div>
     </div>
     <div class="grid">
       <div class="card">
-        <h2><svg class="ic"><use href="#i-plug"/></svg>Как подключить</h2>
-        <div class="row"><label class="k">Base URL</label><div class="val" id="baseUrl">—</div><button class="sm" data-copy="baseUrl" aria-label="Копировать"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-        <div class="row"><label class="k">API Key</label><div class="val">любой непустой (<b>sk-deepseek</b>)</div><button class="sm" data-copy-text="sk-deepseek" aria-label="Копировать"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-        <div class="row"><label class="k">Модель</label><div class="val">deepseek-chat</div><button class="sm" data-copy-text="deepseek-chat" aria-label="Копировать"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        <h2><svg class="ic"><use href="#i-plug"/></svg>How to Connect</h2>
+        <div class="row"><label class="k">Base URL</label><div class="val" id="baseUrl">—</div><button class="sm" data-copy="baseUrl" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        <div class="row"><label class="k">API Key</label><div class="val">any non-empty (<b>sk-deepseek</b>)</div><button class="sm" data-copy-text="sk-deepseek" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        <div class="row"><label class="k">Model</label><div class="val">deepseek-chat</div><button class="sm" data-copy-text="deepseek-chat" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
         <div class="row" style="margin-top:var(--s3)">
           <button class="sm" id="copyCurl"><svg class="ic"><use href="#i-copy"/></svg>cURL</button>
           <button class="sm" id="copyPy"><svg class="ic"><use href="#i-copy"/></svg>Python</button>
         </div>
-        <div class="hint">OpenAI-совместимо. Также есть Anthropic-шим <code>/v1/messages</code> и Responses <code>/v1/responses</code>.</div>
+        <div class="hint">OpenAI-compatible. Also has Anthropic shim <code>/v1/messages</code> and Responses <code>/v1/responses</code>.</div>
       </div>
       <div class="card">
-        <h2><svg class="ic"><use href="#i-key"/></svg>Авторизация DeepSeek</h2>
-        <div id="authBox"><span class="hint">загрузка…</span></div>
-        <div class="hint" style="margin-top:var(--s4)">Обновить логин: запустите <code>Авторизация DeepSeek.bat</code>, войдите в DeepSeek в открывшемся окне, отправьте <code>ok</code> и нажмите Enter в терминале.</div>
+        <h2><svg class="ic"><use href="#i-key"/></svg>DeepSeek Authorization</h2>
+        <div id="authBox"><span class="hint">loading…</span></div>
+        <div class="hint" style="margin-top:var(--s4)">Refresh login: run <code>DeepSeek Authorization.bat</code>, log into DeepSeek in the opened window, send <code>ok</code> and press Enter in terminal.</div>
       </div>
       <div class="card full">
-        <h2><svg class="ic"><use href="#i-overview"/></svg>Модели (<span id="modelCount">0</span>) <span class="spacer"></span>
-          <span class="hint" style="margin:0"><span class="cap r">R</span> reasoning · <span class="cap s">S</span> web-поиск · клик копирует</span></h2>
-        <div class="models" id="modelList"><span class="hint">загрузка…</span></div>
+        <h2><svg class="ic"><use href="#i-overview"/></svg>Models (<span id="modelCount">0</span>) <span class="spacer"></span>
+          <span class="hint" style="margin:0"><span class="cap r">R</span> reasoning · <span class="cap s">S</span> web search · click copies</span></h2>
+        <div class="models" id="modelList"><span class="hint">loading…</span></div>
       </div>
     </div>
   </section>
 
-  <footer>FreeDeepseekAPI · дашборд · <a href="https://t.me/forgetmeai" target="_blank" rel="noopener noreferrer">t.me/forgetmeai</a></footer>
+  <footer>FreeDeepseekAPI · dashboard · <a href="https://t.me/forgetmeai" target="_blank" rel="noopener noreferrer">t.me/forgetmeai</a></footer>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -268,17 +268,17 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const icon = id => `<svg class="ic"><use href="#${id}"/></svg>`;
 function toast(m, kind){ const t=$('#toast'); t.innerHTML=(kind==='err'?icon('i-warn'):kind==='ok'?icon('i-check'):'')+'<span>'+esc(m)+'</span>'; t.className='toast show'+(kind?' '+kind:''); clearTimeout(toast._t); toast._t=setTimeout(()=>t.className='toast',1900); }
 async function copyText(t){
-  try{ if(navigator.clipboard && isSecureContext){ await navigator.clipboard.writeText(t); return toast('Скопировано','ok'); } throw 0; }
-  catch{ try{ const a=document.createElement('textarea'); a.value=t; a.style.position='fixed'; a.style.opacity='0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); toast('Скопировано','ok'); }catch{ toast('Не удалось скопировать','err'); } }
+  try{ if(navigator.clipboard && isSecureContext){ await navigator.clipboard.writeText(t); return toast('Copied','ok'); } throw 0; }
+  catch{ try{ const a=document.createElement('textarea'); a.value=t; a.style.position='fixed'; a.style.opacity='0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); toast('Copied','ok'); }catch{ toast('Failed to copy','err'); } }
 }
 function mdRender(text){ try{ if(window.marked&&window.DOMPurify){ const html=window.marked.parse(text,{breaks:true}); return window.DOMPurify.sanitize(html,{ADD_ATTR:['target']}); } }catch{} return null; }
-// стабильный agent-id для серверной сессии DeepSeek (многоходовость)
+// stable agent-id for server-side DeepSeek session (multi-turn)
 const AGENT_ID = (()=>{ let v=localStorage.getItem('ds_agent'); if(!v){ v='dash-'+Math.abs(Date.now()^(performance.now()*1000|0)).toString(36); localStorage.setItem('ds_agent',v); } return v; })();
 
 const apiBase = origin+'/v1';
 $('#baseUrl').textContent = apiBase;
 
-// ── Вкладки ──────────────────────────────────────────────────────────────
+// ── Tabs ──────────────────────────────────────────────────────────────
 const TABS=['chat','accounts','overview'];
 const inited={};
 function showTab(name){
@@ -304,10 +304,10 @@ document.addEventListener('click', e=>{
   if(b.dataset.copyText!==undefined) return copyText(b.dataset.copyText);
   if(b.dataset.copy) return copyText($('#'+b.dataset.copy).textContent.trim());
 });
-$('#copyCurl').onclick=()=>copyText(`curl ${apiBase}/chat/completions \\\n  -H "Authorization: Bearer sk-deepseek" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"Привет"}]}'`);
-$('#copyPy').onclick=()=>copyText(`from openai import OpenAI\nclient = OpenAI(base_url="${apiBase}", api_key="sk-deepseek")\nr = client.chat.completions.create(model="deepseek-chat",\n    messages=[{"role":"user","content":"Привет"}])\nprint(r.choices[0].message.content)`);
+$('#copyCurl').onclick=()=>copyText(`curl ${apiBase}/chat/completions \\\n  -H "Authorization: Bearer sk-deepseek" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`);
+$('#copyPy').onclick=()=>copyText(`from openai import OpenAI\nclient = OpenAI(base_url="${apiBase}", api_key="sk-deepseek")\nr = client.chat.completions.create(model="deepseek-chat",\n    messages=[{"role":"user","content":"Hi"}])\nprint(r.choices[0].message.content)`);
 
-// ── Статус / KPI / авторизация ───────────────────────────────────────────
+// ── Status / KPI / Auth ───────────────────────────────────────────
 let healthCache=null;
 async function loadHealth(){
   try{
@@ -315,84 +315,84 @@ async function loadHealth(){
     const n=(j.models||[]).length;
     const ac=j.accounts||{};
     $('#statusDot').className='dot on';
-    $('#statusText').textContent='онлайн · '+n+' моделей · '+(ac.online??0)+'/'+(ac.total??0)+' акк.';
-    $('#kpiStatus').textContent='Онлайн'; $('#kpiStatus').className='num ok';
+    $('#statusText').textContent='online · '+n+' models · '+(ac.online??0)+'/'+(ac.total??0)+' acc.';
+    $('#kpiStatus').textContent='Online'; $('#kpiStatus').className='num ok';
     $('#kpiModels').textContent=n;
     $('#kpiAuth').textContent=(ac.online??0)+' / '+(ac.total??0); $('#kpiAuth').className='num'+(ac.online?' ok':' err');
-  }catch{ $('#statusDot').className='dot off'; $('#statusText').textContent='офлайн'; $('#kpiStatus').textContent='Офлайн'; $('#kpiStatus').className='num err'; $('#kpiAuth').textContent='—'; }
+  }catch{ $('#statusDot').className='dot off'; $('#statusText').textContent='offline'; $('#kpiStatus').textContent='Offline'; $('#kpiStatus').className='num err'; $('#kpiAuth').textContent='—'; }
 }
-function fmtExp(ms){ if(!ms) return ''; const d=Math.round((ms-Date.now())/864e5); return 'до '+new Date(ms).toISOString().slice(0,10)+(d>=0?' ('+d+' дн)':' (истёк)'); }
+function fmtExp(ms){ if(!ms) return ''; const d=Math.round((ms-Date.now())/864e5); return 'until '+new Date(ms).toISOString().slice(0,10)+(d>=0?' ('+d+' days)':' (expired)'); }
 async function loadAuth(){
   const box=$('#authBox');
   try{
     const j=await (await fetch(origin+'/api/auth-status')).json();
-    if(!j.config_ready){ box.innerHTML='<div class="onboard">Авторизация не настроена. Запустите <b>Авторизация DeepSeek.bat</b> и войдите в свой аккаунт DeepSeek.</div>'; return; }
-    const exp=j.token_exp?('<div class="row"><label class="k">Срок токена</label><div class="val">'+esc(fmtExp(j.token_exp))+'</div></div>'):'';
-    box.innerHTML=`<div class="row"><label class="k">Токен</label><div class="val">${j.has_token?'есть ✓':'нет'}</div></div>
-      <div class="row"><label class="k">Cookie</label><div class="val">${j.has_cookie?'есть ✓':'нет'}</div></div>
-      <div class="row"><label class="k">hif-заголовки</label><div class="val">${j.has_hif?'есть ✓':'опционально'}</div></div>${exp}`;
-  }catch{ box.innerHTML='<div class="hint err-text">Не удалось получить статус авторизации</div>'; }
+    if(!j.config_ready){ box.innerHTML='<div class="onboard">Authorization not configured. Run <b>DeepSeek Authorization.bat</b> and log into your DeepSeek account.</div>'; return; }
+    const exp=j.token_exp?('<div class="row"><label class="k">Token Expiry</label><div class="val">'+esc(fmtExp(j.token_exp))+'</div></div>'):'';
+    box.innerHTML=`<div class="row"><label class="k">Token</label><div class="val">${j.has_token?'present ✓':'missing'}</div></div>
+      <div class="row"><label class="k">Cookie</label><div class="val">${j.has_cookie?'present ✓':'missing'}</div></div>
+      <div class="row"><label class="k">hif headers</label><div class="val">${j.has_hif?'present ✓':'optional'}</div></div>${exp}`;
+  }catch{ box.innerHTML='<div class="hint err-text">Failed to get authorization status</div>'; }
 }
-// ── Аккаунты ───────────────────────────────────────────────────────────────
-const accStLabel=s=>({OK:'активен',WAIT:'лимит',INVALID:'невалиден',EXPIRED:'истёк',ERROR:'ошибка'})[s]||s;
-function fmtResetAt(iso){ try{ return new Date(iso).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch{ return ''; } }
+// ── Accounts ───────────────────────────────────────────────────────────────
+const accStLabel=s=>({OK:'active',WAIT:'limit',INVALID:'invalid',EXPIRED:'expired',ERROR:'error'})[s]||s;
+function fmtResetAt(iso){ try{ return new Date(iso).toLocaleString('en-US',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch{ return ''; } }
 async function loadAccountsList(){
   const list=$('#accList');
   try{
     const j=await (await fetch(origin+'/api/accounts')).json();
-    if(!j.accounts||!j.accounts.length){ list.innerHTML='<div class="onboard">Пока нет аккаунтов. Добавьте первый через импорт ниже.</div>'; return; }
+    if(!j.accounts||!j.accounts.length){ list.innerHTML='<div class="onboard">No accounts yet. Add first via import below.</div>'; return; }
     list.innerHTML=j.accounts.map(a=>{
-      const meta=a.resetAt?('лимит до '+fmtResetAt(a.resetAt)):(a.exp?fmtExp(a.exp):'');
+      const meta=a.resetAt?('limit until '+fmtResetAt(a.resetAt)):(a.exp?fmtExp(a.exp):'');
       const email=a.email?`<span class="meta">${esc(a.email)}</span>`:'';
       const labelHtml=a.label?`<span class="acc-label">${esc(a.label)}</span>`:'';
       return `<div class="acc ${esc(a.status)}"><span class="id">${esc(a.id)}</span>${labelHtml}<span class="badge ${esc(a.status)}">${accStLabel(a.status)}</span>${email}<span class="meta">…${esc(a.preview||'')}</span><span class="meta">${esc(meta)}</span><span class="spacer"></span>
-        <button class="sm" data-label="${esc(a.id)}" title="Задать имя">✎</button>
-        <button class="sm" data-check="${esc(a.id)}" aria-label="Проверить ${esc(a.id)}">${icon('i-check')}проверить</button>
-        <button class="sm" data-del="${esc(a.id)}" aria-label="Удалить ${esc(a.id)}">${icon('i-trash')}</button></div>`;
+        <button class="sm" data-label="${esc(a.id)}" title="Set Name">✎</button>
+        <button class="sm" data-check="${esc(a.id)}" aria-label="Check ${esc(a.id)}">${icon('i-check')}check</button>
+        <button class="sm" data-del="${esc(a.id)}" aria-label="Delete ${esc(a.id)}">${icon('i-trash')}</button></div>`;
     }).join('');
     setAccUpdated();
-  }catch{ list.innerHTML='<div class="hint err-text">Не удалось загрузить аккаунты. <button class="sm" onclick="loadAccountsList()">'+icon('i-refresh')+'Повторить</button></div>'; }
+  }catch{ list.innerHTML='<div class="hint err-text">Failed to load accounts. <button class="sm" onclick="loadAccountsList()">'+icon('i-refresh')+'Retry</button></div>'; }
 }
-function setAccUpdated(){ const e=$('#accUpdated'); if(e) e.textContent='обновлено '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+function setAccUpdated(){ const e=$('#accUpdated'); if(e) e.textContent='updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
 $('#checkAllAcc').onclick=async()=>{
   const b=$('#checkAllAcc'); b.disabled=true;
   try{ const j=await (await fetch(origin+'/api/accounts')).json();
     for(const a of (j.accounts||[])){ try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(a.id)+'/check',{method:'POST'}); }catch{} }
-    await loadAccountsList(); await loadHealth(); toast('Проверка завершена','ok');
-  }catch{ toast('Ошибка','err'); } b.disabled=false;
+    await loadAccountsList(); await loadHealth(); toast('Check complete','ok');
+  }catch{ toast('Error','err'); } b.disabled=false;
 };
 $('#importBtn').onclick=async()=>{
-  const text=$('#importText').value.trim(); if(!text) return toast('Вставьте cURL или HAR','err');
+  const text=$('#importText').value.trim(); if(!text) return toast('Paste cURL or HAR','err');
   const b=$('#importBtn'); b.disabled=true;
   try{ const j=await (await fetch(origin+'/api/accounts/import',{method:'POST',headers:{'Content-Type':'text/plain'},body:text})).json();
-    if(j.ok){ toast('Добавлен '+j.id,'ok'); $('#importText').value=''; loadAccountsList(); loadHealth(); } else toast(j.error||'Ошибка импорта','err');
-  }catch{ toast('Сеть недоступна','err'); } b.disabled=false;
+    if(j.ok){ toast('Added '+j.id,'ok'); $('#importText').value=''; loadAccountsList(); loadHealth(); } else toast(j.error||'Import Error','err');
+  }catch{ toast('Network unavailable','err'); } b.disabled=false;
 };
 document.addEventListener('click', async e=>{
   const t=e.target.closest('button'); if(!t) return;
   if(t.dataset.label!==undefined){
     const acc=t.closest('.acc'); if(!acc) return;
     const cur=acc.querySelector('.acc-label')?.textContent||'';
-    const inp=document.createElement('input'); inp.type='text'; inp.value=cur; inp.placeholder='имя аккаунта'; inp.style.cssText='max-width:150px;padding:3px 7px';
+    const inp=document.createElement('input'); inp.type='text'; inp.value=cur; inp.placeholder='account name'; inp.style.cssText='max-width:150px;padding:3px 7px';
     acc.insertBefore(inp, acc.querySelector('.spacer')); inp.focus(); inp.select();
     inp.addEventListener('keydown', async ev=>{
       if(ev.key==='Enter'){ ev.preventDefault();
-        try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.label)+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:inp.value})}); toast('Имя сохранено','ok'); }catch{ toast('Ошибка','err'); }
+        try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.label)+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:inp.value})}); toast('Name saved','ok'); }catch{ toast('Error','err'); }
         loadAccountsList();
       } else if(ev.key==='Escape'){ loadAccountsList(); }
     });
-    inp.addEventListener('blur', ()=>loadAccountsList()); // убрать input, если кликнули мимо
+    inp.addEventListener('blur', ()=>loadAccountsList()); // remove input if clicked away
     return;
   }
-  if(t.dataset.check){ const acc=t.closest('.acc'); const badge=acc&&acc.querySelector('.badge'); if(badge){ badge.className='badge checking'; badge.textContent='проверка'; } t.disabled=true;
+  if(t.dataset.check){ const acc=t.closest('.acc'); const badge=acc&&acc.querySelector('.badge'); if(badge){ badge.className='badge checking'; badge.textContent='checking'; } t.disabled=true;
     try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.check)+'/check',{method:'POST'}); }catch{} await loadAccountsList(); await loadHealth(); return; }
   if(t.dataset.del){
-    if(t.dataset.confirm!=='1'){ t.dataset.confirm='1'; t.classList.add('danger'); t.innerHTML=icon('i-trash')+'точно?'; setTimeout(()=>{ if(t.dataset.confirm==='1'){ t.dataset.confirm=''; t.classList.remove('danger'); t.innerHTML=icon('i-trash'); } },3000); return; }
+    if(t.dataset.confirm!=='1'){ t.dataset.confirm='1'; t.classList.add('danger'); t.innerHTML=icon('i-trash')+'sure?'; setTimeout(()=>{ if(t.dataset.confirm==='1'){ t.dataset.confirm=''; t.classList.remove('danger'); t.innerHTML=icon('i-trash'); } },3000); return; }
     t.disabled=true;
-    try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.del),{method:'DELETE'}); toast('Удалён','ok'); }catch{ toast('Ошибка','err'); } loadAccountsList(); loadHealth(); return; }
+    try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.del),{method:'DELETE'}); toast('Deleted','ok'); }catch{ toast('Error','err'); } loadAccountsList(); loadHealth(); return; }
 });
 setInterval(()=>{ if($('#tab-accounts').classList.contains('active')) loadAccountsList(); }, 20000);
-// ── Модели ─────────────────────────────────────────────────────────────────
+// ── Models ─────────────────────────────────────────────────────────────────
 async function loadModels(){
   const list=$('#modelList');
   try{
@@ -401,12 +401,12 @@ async function loadModels(){
     $('#modelCount').textContent=data.length;
     list.innerHTML=data.map(m=>{
       const c=m.capabilities||{};
-      const caps=(c.reasoning?'<span class="cap r" title="reasoning">R</span>':'')+(c.search?'<span class="cap s" title="web-поиск">S</span>':'');
-      return `<span class="chip" data-model="${esc(m.id)}" title="клик — копировать"><span class="id">${esc(m.id)}</span><span class="caps">${caps}</span></span>`;
-    }).join('')||'<span class="hint err-text">не удалось загрузить</span>';
-  }catch{ list.innerHTML='<span class="hint err-text">не удалось загрузить. <button class="sm" onclick="loadModels()">'+icon('i-refresh')+'Повторить</button></span>'; }
+      const caps=(c.reasoning?'<span class="cap r" title="reasoning">R</span>':'')+(c.search?'<span class="cap s" title="web search">S</span>':'');
+      return `<span class="chip" data-model="${esc(m.id)}" title="click copies"><span class="id">${esc(m.id)}</span><span class="caps">${caps}</span></span>`;
+    }).join('')||'<span class="hint err-text">failed to load</span>';
+  }catch{ list.innerHTML='<span class="hint err-text">failed to load. <button class="sm" onclick="loadModels()">'+icon('i-refresh')+'Retry</button></span>'; }
 }
-// #chatModel наполняется реальными моделями из /v1/models; выбор сохраняется в localStorage
+// #chatModel is populated with real models from /v1/models; selection saved to localStorage
 async function populateChatModels(){
   const sel=$('#chatModel'); if(!sel) return;
   try{
@@ -415,21 +415,21 @@ async function populateChatModels(){
     const saved=localStorage.getItem('ds_model');
     sel.innerHTML=data.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
     if(saved && data.some(m=>m.id===saved)) sel.value=saved;
-  }catch{ /* оставляем статичный fallback-список */ }
+  }catch{ /* keep static fallback list */ }
 }
 document.addEventListener('click', e=>{ const c=e.target.closest('.chip[data-model]'); if(c) copyText(c.dataset.model); });
 
-// Модель берётся напрямую из селектора (#chatModel).
-// Веб-поиск (-search) сейчас отключён: DeepSeek Web стабильно отдаёт пустой ответ.
+// Model is taken directly from selector (#chatModel).
+// Web search (-search) currently disabled: DeepSeek Web consistently returns empty response.
 
-// ── Чат (история + reasoning + markdown, через /v1/chat/completions) ──────────
+// ── Chat (history + reasoning + markdown, via /v1/chat/completions) ──────────
 let chatHistory=[], chatBusy=false, chatAbort=null;
 function bubbleEl(m){
   const d=document.createElement('div'); d.className='bubble '+m.role+(m.err?' err':'');
-  d.innerHTML='<div class="role">'+(m.role==='user'?'Вы':'AI')+'</div>';
+  d.innerHTML='<div class="role">'+(m.role==='user'?'You':'AI')+'</div>';
   if(m.role==='assistant' && m.reasoning){
     const det=document.createElement('details'); det.className='think';
-    det.innerHTML='<summary>'+icon('i-bulb')+'Размышления</summary><div class="think-body"></div>';
+    det.innerHTML='<summary>'+icon('i-bulb')+'Reasoning</summary><div class="think-body"></div>';
     det.querySelector('.think-body').textContent=m.reasoning;
     d.appendChild(det); d._think=det;
   }
@@ -440,22 +440,22 @@ function bubbleEl(m){
   if(m.role==='assistant' && m.done && (m.content||'').trim()){
     if(c.classList.contains('md')) addCopyButtons(c);
     const cp=document.createElement('button'); cp.className='sm'; cp.type='button'; cp.style.cssText='margin-top:6px;padding:3px 8px;font-size:11px';
-    cp.innerHTML=icon('i-copy')+'копировать'; cp.onclick=()=>copyText(m.content);
+    cp.innerHTML=icon('i-copy')+'copy'; cp.onclick=()=>copyText(m.content);
     d.appendChild(cp);
   }
   return d;
 }
 function renderChat(){
   const box=$('#msgs');
-  if(!chatHistory.length){ box.innerHTML='<div class="empty">'+icon('i-chat')+'Начните диалог. Ответ — стримингом с markdown; у reasoner-моделей появится панель «Размышления».</div>'; return; }
+  if(!chatHistory.length){ box.innerHTML='<div class="empty">'+icon('i-chat')+'Start dialog. Response streams with markdown; reasoner models will show \'Reasoning\' panel.</div>'; return; }
   box.innerHTML=''; chatHistory.forEach(m=>box.appendChild(bubbleEl(m))); box.scrollTop=box.scrollHeight;
 }
 function atBottom(){ const b=$('#msgs'); return b.scrollHeight-b.scrollTop-b.clientHeight<60; }
-function setBusy(b){ chatBusy=b; const btn=$('#sendChat'); btn.innerHTML=b?'Стоп':icon('i-send')+'Отправить'; btn.classList.toggle('danger',b); }
+function setBusy(b){ chatBusy=b; const btn=$('#sendChat'); btn.innerHTML=b?'Stop':icon('i-send')+'Send'; btn.classList.toggle('danger',b); }
 function ensureThink(node, asst){
   if(node._think) return node._think.querySelector('.think-body');
   const det=document.createElement('details'); det.className='think'; det.open=true;
-  det.innerHTML='<summary>'+icon('i-bulb')+'Размышления</summary><div class="think-body"></div>';
+  det.innerHTML='<summary>'+icon('i-bulb')+'Reasoning</summary><div class="think-body"></div>';
   node.insertBefore(det, node._c); node._think=det;
   return det.querySelector('.think-body');
 }
@@ -487,9 +487,9 @@ async function sendChat(){
           if(delta.content){ asst.content+=delta.content; node._c.textContent=asst.content; if(atBottom()) box.scrollTop=box.scrollHeight; }
         }catch{} }
     }
-    if(!asst.content && !asst.reasoning){ chatHistory.pop(); node.remove(); toast('Пустой ответ','err'); }
+    if(!asst.content && !asst.reasoning){ chatHistory.pop(); node.remove(); toast('Empty response','err'); }
     else { asst.done=true; if(node._think) node._think.open=false; const html=mdRender(asst.content); if(html){ node.classList.remove('plain'); node._c.className='body md'; node._c.innerHTML=html; addCopyButtons(node._c); }
-      if((asst.content||'').trim()){ const cp=document.createElement('button'); cp.className='sm'; cp.type='button'; cp.style.cssText='margin-top:6px;padding:3px 8px;font-size:11px'; cp.innerHTML=icon('i-copy')+'копировать'; cp.onclick=()=>copyText(asst.content); node.appendChild(cp); }
+      if((asst.content||'').trim()){ const cp=document.createElement('button'); cp.className='sm'; cp.type='button'; cp.style.cssText='margin-top:6px;padding:3px 8px;font-size:11px'; cp.innerHTML=icon('i-copy')+'copy'; cp.onclick=()=>copyText(asst.content); node.appendChild(cp); }
       if(atBottom()) box.scrollTop=box.scrollHeight; }
   }catch(e){
     if(e.name==='AbortError'){ if(!asst.content&&!asst.reasoning){ chatHistory.pop(); node.remove(); } else asst.done=true; }
@@ -504,7 +504,7 @@ $('#clearChat').onclick=async()=>{
   try{ await fetch(origin+'/reset-session?agent='+encodeURIComponent(AGENT_ID),{method:'POST'}); }catch{}
 };
 
-// ── Утилиты UI ───────────────────────────────────────────────────────────────
+// ── UI Utils ───────────────────────────────────────────────────────────────
 function addCopyButtons(container){
   container.querySelectorAll('pre').forEach(pre=>{
     if(pre.querySelector('.code-copy')) return;
@@ -517,14 +517,14 @@ function addCopyButtons(container){
 }
 function autoGrow(el){ if(!el) return; const fn=()=>{ el.style.height='auto'; const mh=parseInt(getComputedStyle(el).maxHeight)||9999; el.style.height=Math.min(el.scrollHeight, mh)+'px'; }; el.addEventListener('input',fn); }
 
-// ── Старт ──────────────────────────────────────────────────────────────────
+// ── Start ──────────────────────────────────────────────────────────────────
 renderChat();
 populateChatModels();
 $('#chatModel').addEventListener('change',()=>localStorage.setItem('ds_model',$('#chatModel').value));
 autoGrow($('#chatInput')); autoGrow($('#importText'));
 showTab((location.hash||'#chat').slice(1)||'chat');
 loadHealth(); setInterval(loadHealth, 15000);
-// #28 авто-обновление Обзора (модели/auth), пока вкладка активна
+// #28 auto-refresh Overview (models/auth) while tab is active
 setInterval(()=>{ const ov=$('#tab-overview'); if(ov&&ov.classList.contains('active')){ loadModels(); loadAuth(); } }, 30000);
 </script>
 </body>

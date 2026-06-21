@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DeepSeek → FreeDeepseekAPI",
   "version": "1.4",
-  "description": "Добавляет аккаунт DeepSeek в локальный FreeDeepseekAPI одним кликом. Перехватывает заголовки запроса chat.deepseek.com (token + cookie + hif).",
+  "description": "Adds a DeepSeek account to local FreeDeepseekAPI with one click. Intercepts chat.deepseek.com request headers (token + cookie + hif).",
   "author": "FreeDeepseekAPI",
   "browser_specific_settings": {
     "gecko": {
