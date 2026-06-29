@@ -17,6 +17,8 @@ const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const { parseAuthInput, finalizeAuth } = require('./lib/parseAuth');
+const { solvePOW } = require('./lib/pow');
+const { decodeTokenInfo } = require('./lib/jwt');
 
 const SERVER_HOST = os.hostname();  // Dynamic hostname detection
 const SERVER_PUBLIC_IP = (() => {
@@ -34,6 +36,20 @@ const SERVER_PUBLIC_IP = (() => {
 const FORGETMEAI_WATERMARK = 't.me/forgetmeai';
 const PORT = Number(process.env.PORT || 9655);
 const HOST = process.env.HOST || '0.0.0.0';
+// Optional shared-secret. When set, the chat/messages/responses endpoints require
+// `Authorization: Bearer <DEEPSEEK_API_KEY>`. Empty = open (back-compat default).
+const API_KEY = process.env.DEEPSEEK_API_KEY || '';
+// Comma-separated extra origins allowed to call the API from a browser. Same-origin
+// (the dashboard) is always allowed; everything else is rejected (no CORS wildcard).
+const CORS_ALLOW_ORIGINS = (process.env.CORS_ALLOW_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+// Per-DeepSeek-request network timeout, and an overall wall-clock budget for one
+// inbound request (caps the empty-response retry / continuation loops).
+const DS_FETCH_TIMEOUT_MS = Number(process.env.DEEPSEEK_FETCH_TIMEOUT_MS || 60000);
+const REQUEST_DEADLINE_MS = Number(process.env.DEEPSEEK_REQUEST_DEADLINE_MS || 120000);
+// Max concurrent in-flight completions; excess gets 503 + Retry-After.
+const MAX_CONCURRENT = Number(process.env.DEEPSEEK_MAX_CONCURRENT || 24);
+// Empty-response retry cap (was a hard-coded 10 — far too high for an interactive proxy).
+const MAX_EMPTY_RETRIES = Number(process.env.DEEPSEEK_MAX_RETRIES || 4);
 function formatWatermark(prefix = 'ForgetMeAI') { return `${prefix}: ${FORGETMEAI_WATERMARK}`; }
 function printBanner() {
     console.log(`
@@ -73,6 +89,7 @@ let DS_CONFIG = {};
 let dsHeaders = {};
 const accounts = [];
 let accountRoundRobin = 0;
+let inFlight = 0;  // concurrent in-flight completions (backpressure cap)
 function buildBaseHeaders(config = DS_CONFIG) {
     return {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
@@ -175,10 +192,7 @@ function selectAccountForSession(session) {
             // A DeepSeek chat_session belongs to the auth account that created it.
             // If that account is rate-limited/expired, do not keep hammering it;
             // reset the web session and let a healthy account take over.
-            session.id = null;
-            session.parentMessageId = null;
-            session.createdAt = null;
-            session.messageCount = 0;
+            resetSession(session);
         }
         session.accountId = null;
     }
@@ -187,9 +201,15 @@ function selectAccountForSession(session) {
         const waiting = accounts.filter(a => a.config.token && a.config.cookie).sort((a, b) => a.cooldownUntil - b.cooldownUntil)[0];
         if (waiting) {
             const waitSec = Math.max(1, Math.ceil((waiting.cooldownUntil - now) / 1000));
-            throw new Error(`All DeepSeek auth accounts are cooling down. Retry in ~${waitSec}s or import a fresh account with npm run auth:import.`);
+            // Tagged so the request handler returns 429 + Retry-After instead of a
+            // generic 500 (integrator backoff keys on the status code, not the text).
+            const err = new Error(`All DeepSeek auth accounts are cooling down. Retry in ~${waitSec}s or import a fresh account with npm run auth:import.`);
+            err.status = 429; err.retryAfter = waitSec; err.type = 'rate_limit';
+            throw err;
         }
-        throw new Error('No valid DeepSeek auth accounts. Run npm run auth or npm run auth:import.');
+        const noAuth = new Error('No valid DeepSeek auth accounts. Run npm run auth or npm run auth:import.');
+        noAuth.status = 503; noAuth.type = 'no_auth';
+        throw noAuth;
     }
     const account = ready[accountRoundRobin % ready.length];
     accountRoundRobin++;
@@ -221,13 +241,23 @@ function markAccountFailure(account, status, reason = '', retryAfterRaw = null) 
 }
 
 // === Account management (dashboard / import) on top of the file-based pool ===
+// decodeTokenInfo() lives in lib/jwt (shared with scripts/doctor.js).
 
-// Decode a JWT payload's `exp` (in ms) without verifying the signature.
-function decodeTokenInfo(token) {
-    try {
-        const p = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString());
-        return { exp: p.exp ? p.exp * 1000 : null };
-    } catch { return { exp: null }; }
+// Clear a session's DeepSeek-side state (chat_session id, parent message, age,
+// depth) while keeping the per-agent history. Centralizes a 4-line block that was
+// copy-pasted ~9 times — one copy used to forget messageCount and could drift.
+function resetSession(session) {
+    session.id = null;
+    session.parentMessageId = null;
+    session.createdAt = null;
+    session.messageCount = 0;
+}
+
+// fetch() to DeepSeek with a hard timeout. Plain fetch() has NO default timeout,
+// so a stalled upstream would hang the inbound request (and pin the account)
+// forever. One wrapper covers every DeepSeek call site.
+function dsFetch(url, options = {}, timeoutMs = DS_FETCH_TIMEOUT_MS) {
+    return fetch(url, { ...options, signal: options.signal || AbortSignal.timeout(timeoutMs) });
 }
 
 // String status used by the dashboard. Distinct from accountStatus() (object form)
@@ -358,6 +388,7 @@ function createSession() {
         messageCount: 0,
         accountId: null,
         history: [],
+        lastActivityAt: Date.now(),
     };
 }
 
@@ -365,31 +396,25 @@ function getOrCreateAgentSession(agentId) {
     if (!sessions.has(agentId)) {
         sessions.set(agentId, createSession());
     }
-    return sessions.get(agentId);
+    const session = sessions.get(agentId);
+    session.lastActivityAt = Date.now();
+    return session;
 }
 
-async function solvePOW(challenge, config = DS_CONFIG) {
-    const resp = await fetch(config.wasmUrl);
-    const wasmBytes = await resp.arrayBuffer();
-    const mod = await WebAssembly.instantiate(wasmBytes, { wbg: {} });
-    const e = mod.instance.exports;
-    const encoder = new TextEncoder();
-    const prefix = challenge.salt + '_' + challenge.expire_at + '_';
-    const cBytes = encoder.encode(challenge.challenge);
-    const pBytes = encoder.encode(prefix);
-    const cP = e.__wbindgen_export_0(cBytes.length, 1) >>> 0;
-    const pP = e.__wbindgen_export_0(pBytes.length, 1) >>> 0;
-    new Uint8Array(e.memory.buffer, cP, cBytes.length).set(cBytes);
-    new Uint8Array(e.memory.buffer, pP, pBytes.length).set(pBytes);
-    const sp = e.__wbindgen_add_to_stack_pointer(-16);
-    e.wasm_solve(sp, cP, cBytes.length, pP, pBytes.length, challenge.difficulty);
-    const dv = new DataView(e.memory.buffer);
-    const code = dv.getInt32(sp, true);
-    const ans = dv.getFloat64(sp + 8, true);
-    e.__wbindgen_add_to_stack_pointer(16);
-    if (code === 0 || !Number.isFinite(ans) || ans <= 0) throw new Error('POW failed');
-    return Math.floor(ans);
+// Evict idle sessions so the Map (keyed by client IP / user id) can't grow without
+// bound on a long-running process. Drops entries untouched for 2× the session TTL.
+function sweepIdleSessions(maxIdleMs = SESSION_TTL_MS * 2) {
+    const now = Date.now();
+    let removed = 0;
+    for (const [agentId, session] of sessions) {
+        if (now - (session.lastActivityAt || 0) > maxIdleMs) { sessions.delete(agentId); removed++; }
+    }
+    if (removed) console.log(`[DS-API] swept ${removed} idle session(s); ${sessions.size} remain`);
+    return removed;
 }
+
+// solvePOW() lives in lib/pow (compiled-module cache + WASM-fetch timeout),
+// shared with client.js. Called as solvePOW(challenge, wasmUrl).
 
 const MODEL_CONFIGS = {
     // DeepSeek Web real model_type: default / UI name: "Быстрый".
@@ -549,23 +574,17 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
     // Auto-reset on deep message chain
     if (session.id && session.messageCount >= MAX_MESSAGE_DEPTH) {
         console.log(`${agentTag} Session ${session.id} hit ${session.messageCount} messages. Auto-resetting.`);
-        session.id = null;
-        session.parentMessageId = null;
-        session.createdAt = null;
-        session.messageCount = 0;
+        resetSession(session);
         // History preserved for context injection
     }
 
     // Reset expired sessions (DeepSeek web sessions last ~1-2 hours)
     if (session.id && session.createdAt && (Date.now() - session.createdAt > SESSION_TTL_MS)) {
         console.log(`${agentTag} Session ${session.id} expired (age: ${Math.round((Date.now() - session.createdAt) / 60000)}min). Creating new...`);
-        session.id = null;
-        session.parentMessageId = null;
-        session.createdAt = null;
-        session.messageCount = 0;
+        resetSession(session);
     }
 
-    const cr = await fetch('https://chat.deepseek.com/api/v0/chat/create_pow_challenge', {
+    const cr = await dsFetch('https://chat.deepseek.com/api/v0/chat/create_pow_challenge', {
         method: 'POST', headers: dsHeaders,
         body: JSON.stringify({ target_path: '/api/v0/chat/completion' })
     });
@@ -581,10 +600,10 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
     if (!challenge) {
         throw new Error('DeepSeek PoW response has no data.biz_data.challenge. Auth may be expired, captcha may be required, or DeepSeek changed Web API. Run npm run doctor, then npm run auth.');
     }
-    const answer = await solvePOW(challenge, account.config);
+    const answer = await solvePOW(challenge, account.config.wasmUrl);
 
     if (!session.id) {
-        const sr = await fetch('https://chat.deepseek.com/api/v0/chat_session/create', {
+        const sr = await dsFetch('https://chat.deepseek.com/api/v0/chat_session/create', {
             method: 'POST', headers: dsHeaders, body: '{}'
         });
         const { json: sessionData, text: sessionText } = await readDeepSeekJsonResponse(sr, 'session create', account);
@@ -607,7 +626,7 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
         salt: challenge.salt, answer: answer,
         signature: challenge.signature, target_path: '/api/v0/chat/completion'
     })).toString('base64');
-    const resp = await fetch('https://chat.deepseek.com/api/v0/chat/completion', {
+    const resp = await dsFetch('https://chat.deepseek.com/api/v0/chat/completion', {
         method: 'POST',
         headers: { ...dsHeaders, 'X-DS-PoW-Response': powB64 },
         body: JSON.stringify({
@@ -628,12 +647,9 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
         console.log(`${agentTag} Session error (${resp.status}): ${errText.substring(0, 100)}`);
         if (resp.status === 400 || resp.status === 404 || resp.status === 500) {
             console.log(`${agentTag} Session ${session.id} expired. Creating new session...`);
-            session.id = null;
-            session.parentMessageId = null;
-            session.createdAt = null;
-            session.messageCount = 0;
+            resetSession(session);
 
-            const sr2 = await fetch('https://chat.deepseek.com/api/v0/chat_session/create', {
+            const sr2 = await dsFetch('https://chat.deepseek.com/api/v0/chat_session/create', {
                 method: 'POST', headers: dsHeaders, body: '{}'
             });
             const { json: sessionData2, text: sessionText2 } = await readDeepSeekJsonResponse(sr2, 'session recreate', account);
@@ -652,7 +668,7 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
                 salt: challenge.salt, answer: answer,
                 signature: challenge.signature, target_path: '/api/v0/chat/completion'
             })).toString('base64');
-            const resp2 = await fetch('https://chat.deepseek.com/api/v0/chat/completion', {
+            const resp2 = await dsFetch('https://chat.deepseek.com/api/v0/chat/completion', {
                 method: 'POST',
                 headers: { ...dsHeaders, 'X-DS-PoW-Response': newPowB64 },
                 body: JSON.stringify({
@@ -666,6 +682,8 @@ async function askDeepSeekStream(prompt, agentId, model = 'deepseek-default') {
             });
             return { resp: resp2, agentId, account };
         }
+    } else {
+        account.failures = 0;  // healthy completion — reset the failure counter so /health reflects current state
     }
 
     return { resp, agentId, account };
@@ -866,7 +884,7 @@ function buildToolCallResponse(toolCall, model = 'deepseek-default', prompt = ''
     };
 }
 
-function buildTextResponse(content, prompt, model = 'deepseek-default', reasoningContent = '') {
+function buildTextResponse(content, prompt, model = 'deepseek-default', reasoningContent = '', finishReason = null) {
     const message = { role: 'assistant', content };
     if (reasoningContent) message.reasoning_content = reasoningContent;
     return {
@@ -877,7 +895,9 @@ function buildTextResponse(content, prompt, model = 'deepseek-default', reasonin
         choices: [{
             index: 0,
             message,
-            finish_reason: 'stop'
+            // Surface truncation: a 'length' finish lets length-aware clients re-request
+            // instead of silently treating a cut-off answer as a clean stop.
+            finish_reason: finishReason === 'length' ? 'length' : 'stop'
         }],
         usage: buildUsage(prompt, content, reasoningContent),
         watermark: FORGETMEAI_WATERMARK
@@ -1030,7 +1050,7 @@ function writeSse(res, event, data) {
 }
 
 function sendAnthropicStream(res, openaiResp) {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     const choice = openaiResp.choices[0];
     const msg = choice.message || {};
     const message = toAnthropicResponse(openaiResp);
@@ -1101,7 +1121,7 @@ function toResponsesResponse(openaiResp) {
 }
 
 function sendResponsesStream(res, openaiResp) {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     const response = toResponsesResponse(openaiResp);
     const choice = openaiResp.choices[0];
     const msg = choice.message || {};
@@ -1143,7 +1163,7 @@ function sendResponsesStream(res, openaiResp) {
 }
 
 function sendOpenAIStream(res, openaiResp) {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     const choice = openaiResp.choices[0];
     const msg = choice.message || {};
     const id = openaiResp.id;
@@ -1284,9 +1304,36 @@ function isCrossOrigin(req) {
     try { return new URL(src).host !== req.headers.host; } catch { return true; }
 }
 
+// Echo an Origin back only when it is same-origin (the dashboard) or explicitly
+// allow-listed via CORS_ALLOW_ORIGINS. Replaces a blanket `*`, which let any web
+// page the user was visiting drive the (unauthenticated) chat endpoints.
+function corsOriginFor(req) {
+    const origin = req.headers.origin;
+    if (!origin) return null;
+    try {
+        if (new URL(origin).host === req.headers.host) return origin; // same-origin
+    } catch { /* malformed Origin */ }
+    return CORS_ALLOW_ORIGINS.includes(origin) ? origin : null;
+}
+
+// Optional shared-secret check for the inference endpoints. No-op when API_KEY is
+// unset (back-compat). Constant-time compare to avoid leaking the key by timing.
+function isAuthorized(req) {
+    if (!API_KEY) return true;
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+    const presented = m ? m[1].trim() : '';
+    const a = Buffer.from(presented);
+    const b = Buffer.from(API_KEY);
+    try { return a.length === b.length && require('crypto').timingSafeEqual(a, b); } catch { return false; }
+}
+
 // === HTTP Server ===
 const server = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const allowOrigin = corsOriginFor(req);
+    if (allowOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', allowOrigin);
+        res.setHeader('Vary', 'Origin');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
@@ -1296,7 +1343,17 @@ const server = http.createServer(async (req, res) => {
     // Health check
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', service: 'FreeDeepseekAPI', watermark: FORGETMEAI_WATERMARK, models: SUPPORTED_MODEL_IDS, unsupported_models: Object.keys(MODEL_CONFIGS).filter(id => !MODEL_CONFIGS[id].supported), agents: sessions.size, accounts: accounts.map(accountStatus), config_ready: hasAuthConfig(), session_reuse: { strategy: 'sticky per x-agent-session/user', ttl_minutes: Math.round(SESSION_TTL_MS / 60000), max_messages: MAX_MESSAGE_DEPTH, reset_all: 'POST /reset-session?agent=all' } }));
+        res.end(JSON.stringify({ status: 'ok', service: 'FreeDeepseekAPI', watermark: FORGETMEAI_WATERMARK, models: SUPPORTED_MODEL_IDS, unsupported_models: Object.keys(MODEL_CONFIGS).filter(id => !MODEL_CONFIGS[id].supported), agents: sessions.size, in_flight: inFlight, accounts: accounts.map(accountStatus), config_ready: hasAuthConfig(), session_reuse: { strategy: 'sticky per x-agent-session/user', ttl_minutes: Math.round(SESSION_TTL_MS / 60000), max_messages: MAX_MESSAGE_DEPTH, reset_all: 'POST /reset-session?agent=all' } }));
+        return;
+    }
+
+    // Readiness probe (distinct from liveness above): 503 unless at least one account
+    // can actually serve right now, so an aggregator/LB won't route to a cold pool.
+    if (req.method === 'GET' && url.pathname === '/readyz') {
+        const now = Date.now();
+        const ready = accounts.filter(a => a.config.token && a.config.cookie && a.cooldownUntil <= now).length;
+        res.writeHead(ready > 0 ? 200 : 503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ready: ready > 0, ready_accounts: ready, total_accounts: accounts.length }));
         return;
     }
 
@@ -1350,10 +1407,7 @@ const server = http.createServer(async (req, res) => {
         }
         const historyCount = session.history.length;
         const historyPreview = session.history.map(e => e.user.substring(0, 40)).join(' | ');
-        session.id = null;
-        session.parentMessageId = null;
-        session.createdAt = null;
-        session.messageCount = 0;
+        resetSession(session);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'session_reset', agent: agentId, history_preserved: historyCount, history: historyPreview }));
         return;
@@ -1372,8 +1426,10 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // Auth status for dashboard: decode JWT exp (no signature check) + presence flags
+    // Auth status for dashboard: decode JWT exp (no signature check) + presence flags.
+    // Localhost-only — it discloses token expiry/presence, so keep it off the open network.
     if (req.method === 'GET' && url.pathname === '/api/auth-status') {
+        if (!isLocal(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Available from localhost only' })); return; }
         const ok = accounts.find(a => accountStatusStr(a) === 'OK');
         const tokenExp = ok ? decodeTokenInfo(ok.config.token).exp : null;
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1479,9 +1535,34 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(404); res.end('Not found'); return;
     }
 
+    // Optional API-key gate (no-op unless DEEPSEEK_API_KEY is set).
+    if (!isAuthorized(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Missing or invalid API key', type: 'authentication_error' } }));
+        return;
+    }
+    // Backpressure: reject rather than fan out unbounded concurrent upstream work.
+    if (inFlight >= MAX_CONCURRENT) {
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '2' });
+        res.end(JSON.stringify({ error: { message: `Server busy (${inFlight}/${MAX_CONCURRENT} requests in flight). Retry shortly.`, type: 'overloaded' } }));
+        return;
+    }
+
     let body = '';
-    req.on('data', chunk => body += chunk);
+    let bodyTooLarge = false;
+    const MAX_BODY_BYTES = 10 * 1024 * 1024;  // chat payloads are small; cap memory like /import does
+    req.on('data', chunk => { body += chunk; if (body.length > MAX_BODY_BYTES) { bodyTooLarge = true; req.destroy(); } });
     req.on('end', async () => {
+        if (bodyTooLarge) {
+            res.writeHead(413, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Request body too large', type: 'payload_too_large' } }));
+            return;
+        }
+        inFlight++;
+        let clientGone = false;
+        res.on('close', () => { clientGone = true; });
+        const requestStartedAt = Date.now();
+        const deadlineHit = () => Date.now() - requestStartedAt > REQUEST_DEADLINE_MS;
         try {
             const rawParams = JSON.parse(body || '{}');
             const params = normalizeApiParams(rawParams, apiMode);
@@ -1542,6 +1623,10 @@ const server = http.createServer(async (req, res) => {
             }
 
             const { prompt, systemPrompt } = formatMessages(messages, tools);
+            // For usage accounting, count the CLIENT's original input — not the
+            // proxy-expanded fullPrompt (system + injected tools + history) — so
+            // prompt_tokens reflects what the caller actually sent.
+            const clientPromptText = messages.map(m => normalizeMessageContent(m.content)).join('\n');
 
             const session = getOrCreateAgentSession(agentId);
 
@@ -1587,8 +1672,9 @@ const server = http.createServer(async (req, res) => {
                     rebuildFragmentState();
                 };
 
+                const decoder = new TextDecoder();  // one instance: preserves multi-byte (Cyrillic/emoji) split across chunks
                 for await (const chunk of readable) {
-                    buffer += new TextDecoder().decode(chunk, { stream: true });
+                    buffer += decoder.decode(chunk, { stream: true });
                     const lines = buffer.split('\n');
                     buffer = lines.pop() || '';
                     for (const line of lines) {
@@ -1669,30 +1755,30 @@ const server = http.createServer(async (req, res) => {
 
             // Empty response — retry loop with fresh sessions
             let retryAttempt = 0;
-            const MAX_RETRIES = 10;
             while (!fullContent || fullContent.trim().length === 0) {
+                // Stop early if the client hung up or we've blown the request budget —
+                // no point burning more PoW solves + account quota for a dead socket.
+                if (clientGone) { console.log(`${agentTag} client disconnected; abandoning empty-retry loop`); return; }
+                if (deadlineHit()) { console.log(`${agentTag} request deadline hit; stopping empty-retry loop`); break; }
                 retryAttempt++;
-                if (retryAttempt > MAX_RETRIES) {
-                    console.log(`${agentTag} Empty after ${MAX_RETRIES} retries. Giving up.`);
+                if (retryAttempt > MAX_EMPTY_RETRIES) {
+                    console.log(`${agentTag} Empty after ${MAX_EMPTY_RETRIES} retries. Giving up.`);
                     res.writeHead(502, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ 
-                        error: { 
-                            message: `DeepSeek returned empty content after ${MAX_RETRIES} retries`, 
+                    res.end(JSON.stringify({
+                        error: {
+                            message: `DeepSeek returned empty content after ${MAX_EMPTY_RETRIES} retries`,
                             type: 'empty_response',
                             agent: agentId,
                             session_id: session.id,
                             message_count: session.messageCount,
                             history_length: session.history.length,
                             retry_attempts: retryAttempt - 1,
-                        } 
+                        }
                     }));
                     return;
                 }
-                console.log(`${agentTag} Empty response (msg#${session.messageCount}, retry ${retryAttempt}/${MAX_RETRIES}). Resetting session...`);
-                session.id = null;
-                session.parentMessageId = null;
-                session.createdAt = null;
-                session.messageCount = 0;
+                console.log(`${agentTag} Empty response (msg#${session.messageCount}, retry ${retryAttempt}/${MAX_EMPTY_RETRIES}). Resetting session...`);
+                resetSession(session);
                 // Brief delay before retry to let DeepSeek breathe
                 await new Promise(r => setTimeout(r, Math.min(1000 * retryAttempt, 5000)));
                 const { resp: retryResp } = await askDeepSeekStream(fullPrompt, agentId, requestedModel);
@@ -1711,6 +1797,7 @@ const server = http.createServer(async (req, res) => {
             let continuationRounds = 0;
             const MAX_CONTINUATION = 2;
             while ((finishReason === 'length' || fullContent.length > 25000) && continuationRounds < MAX_CONTINUATION) {
+                if (clientGone || deadlineHit()) break;
                 continuationRounds++;
                 console.log(`${agentTag} Response ${fullContent.length} chars (finish=${finishReason}). Auto-continuing (${continuationRounds}/${MAX_CONTINUATION})...`);
                 await new Promise(r => setTimeout(r, 500));
@@ -1741,10 +1828,7 @@ const server = http.createServer(async (req, res) => {
             // Retry if TOOL_CALL was found but JSON was truncated/invalid
             if (!toolCall && /TOOL_CALL:\s*\w/i.test(fullContent)) {
                 console.log(`${agentTag} TOOL_CALL detected but JSON invalid/truncated (${fullContent.length} chars). Retrying with stricter prompt...`);
-                session.id = null;
-                session.parentMessageId = null;
-                session.createdAt = null;
-                session.messageCount = 0;
+                resetSession(session);
                 await new Promise(r => setTimeout(r, 1000));
                 const strictPrompt = fullPrompt + '\n\n[STRICT INSTRUCTION] Your previous response had a TOOL_CALL but the arguments were too long and got cut off. Keep the arguments SHORT — no large file contents. Just use a minimal example or reference the file by name. Output ONLY: TOOL_CALL: <function>\narguments: <short JSON>';
                 const { resp: retryResp2 } = await askDeepSeekStream(strictPrompt, agentId, requestedModel);
@@ -1778,8 +1862,8 @@ const server = http.createServer(async (req, res) => {
             storeHistory(agentId, prompt, fullContent, toolCall);
 
             const openaiResponse = toolCall
-                ? buildToolCallResponse(toolCall, requestedModel, fullPrompt, reasoningContent)
-                : buildTextResponse(fullContent, fullPrompt, requestedModel, reasoningContent);
+                ? buildToolCallResponse(toolCall, requestedModel, clientPromptText, reasoningContent)
+                : buildTextResponse(fullContent, clientPromptText, requestedModel, reasoningContent, finishReason);
 
             if (stream) {
                 if (apiMode === 'anthropic') {
@@ -1803,8 +1887,16 @@ const server = http.createServer(async (req, res) => {
             }
         } catch (e) {
             console.log('[DS-API] Error:', e.message);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: { message: e.message, type: 'server_error' } }));
+            if (res.headersSent || clientGone) return;  // streamed/aborted: nothing to send
+            // Pool exhaustion / no-auth carry an explicit status so integrators see
+            // 429/503 (not a generic 500) and can honor Retry-After.
+            const status = e.status || 500;
+            const headers = { 'Content-Type': 'application/json' };
+            if (status === 429 && e.retryAfter) headers['Retry-After'] = String(e.retryAfter);
+            res.writeHead(status, headers);
+            res.end(JSON.stringify({ error: { message: e.message, type: e.type || 'server_error' } }));
+        } finally {
+            inFlight--;
         }
     });
 });
@@ -1866,6 +1958,18 @@ async function main() {
     printBanner();
     const shouldStart = await showStartupMenu();
     if (!shouldStart) process.exit(0);
+    // Loud warning: an open bind with no API key exposes the imported accounts to
+    // anyone who can reach the port.
+    if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !API_KEY) {
+        console.warn(`[DS-API] ⚠ Listening on ${HOST} with NO API key — chat endpoints are OPEN to anyone on the network. Set DEEPSEEK_API_KEY, or HOST=127.0.0.1 for localhost-only.`);
+    }
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') console.error(`[DS-API] FATAL: port ${PORT} already in use. Set PORT=<other> or stop the other instance.`);
+        else console.error('[DS-API] server error:', err);
+        process.exit(1);
+    });
+    // Periodically evict idle sessions (unref'd so it never keeps the process alive).
+    setInterval(sweepIdleSessions, 10 * 60 * 1000).unref();
     server.listen(PORT, HOST, () => {
         console.log(`[DS-API] Server on http://${HOST}:${PORT} (multi-agent sessions enabled)`);
         console.log(`[DS-API] ${formatWatermark()}`);
@@ -1881,6 +1985,17 @@ async function main() {
 }
 
 if (require.main === module) {
+    // Don't let a stray rejection/throw take the whole proxy down silently.
+    process.on('unhandledRejection', (reason) => console.error('[DS-API] unhandledRejection:', reason));
+    process.on('uncaughtException', (err) => console.error('[DS-API] uncaughtException:', err));
+    // Graceful shutdown: stop accepting, drain, then exit (force-exit after 10s).
+    const shutdown = (sig) => {
+        console.log(`[DS-API] ${sig} received — shutting down…`);
+        server.close(() => process.exit(0));
+        setTimeout(() => process.exit(0), 10000).unref();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
     main().catch(err => { console.error('[DS-API] FATAL:', err); process.exit(1); });
 }
 
@@ -1891,5 +2006,15 @@ module.exports = {
         isDeepSeekModelErrorEvent,
         rebuildFragmentText,
         applyResponsePatchOperations,
+        resetSession,
+        createSession,
+        sweepIdleSessions,
+        sessions,
+        buildTextResponse,
+        buildUsage,
+        estimateTokens,
+        parseRetryAfterMs,
+        corsOriginFor,
+        isAuthorized,
     },
 };
