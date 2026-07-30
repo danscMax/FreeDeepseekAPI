@@ -681,3 +681,4 @@ If something stops working:
 <p align="center">
   <strong>ForgetMeAI</strong> · <a href="https://t.me/forgetmeai">Telegram</a>
 </p>
+
