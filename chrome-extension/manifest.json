@@ -11,12 +11,14 @@
       "data_collection_permissions": { "required": ["none"] }
     }
   },
-  "permissions": ["webRequest", "storage"],
+  "permissions": ["webRequest", "cookies", "storage"],
   "host_permissions": [
     "https://chat.deepseek.com/*",
+    "https://*.deepseek.com/*",
     "http://localhost:9655/*",
     "http://127.0.0.1:9655/*"
   ],
+  "content_scripts": [{ "matches": ["https://chat.deepseek.com/*"], "js": ["content.js"], "run_at": "document_idle" }],
   "background": {
     "service_worker": "background.js",
     "scripts": ["background.js"]

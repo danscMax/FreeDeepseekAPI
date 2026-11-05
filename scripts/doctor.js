@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { loadDotEnv } = require('../lib/env');
 const { decodeTokenInfo } = require('../lib/jwt');
 
 const ROOT = path.resolve(__dirname, '..');
+if (require.main === module) loadDotEnv(path.join(ROOT, '.env'));
 const DEFAULT_AUTH = process.env.DEEPSEEK_AUTH_PATH || path.join(ROOT, 'deepseek-auth.json');
 
 function isTruthy(v) { return /^(1|true|yes|on)$/i.test(String(v || '')); }
@@ -27,21 +29,15 @@ function checkAuthFile(file) {
   try { auth = JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch (e) { return { file, ok: false, issues: [`invalid JSON: ${e.message}`], auth: null }; }
   if (!auth.token) issues.push('token missing');
+  const tokenExp = decodeTokenInfo(auth.token).exp;
+  if (tokenExp && tokenExp <= Date.now()) issues.push('token expired');
   if (!auth.cookie) issues.push('cookie missing');
   if (!auth.wasmUrl) issues.push('wasmUrl missing');
-  // Catch an expired token offline so doctor doesn't report "OK" on a dead account.
-  // Near-expiry is a non-failing note (doesn't flip ok) so it doesn't break CI.
-  let note = null;
-  if (auth.token) {
-    const { exp } = decodeTokenInfo(auth.token);
-    if (exp && exp <= Date.now()) issues.push(`token expired (${new Date(exp).toISOString().slice(0, 10)})`);
-    else if (exp && exp - Date.now() < 48 * 3600 * 1000) note = `token expires soon (${new Date(exp).toISOString().slice(0, 10)}) — consider re-auth`;
-  }
   if (process.platform !== 'win32') {
     const mode = fs.statSync(file).mode & 0o777;
     if ((mode & 0o077) !== 0) issues.push(`permissions too open: ${mode.toString(8)} (run: chmod 600 ${file})`);
   }
-  return { file, ok: issues.length === 0, issues, note, auth };
+  return { file, ok: issues.length === 0, issues, auth };
 }
 async function liveCheck(auth) {
   const headers = {
@@ -61,11 +57,16 @@ async function liveCheck(auth) {
   };
   const checks = [];
   try {
-    const r = await fetch('https://chat.deepseek.com/api/v0/chat/create_pow_challenge', {
+    const base = String(process.env.DEEPSEEK_BASE_URL || 'https://chat.deepseek.com').replace(/\/+$/, '');
+    const r = await fetch(`${base}/api/v0/chat/create_pow_challenge`, {
       method: 'POST', headers, body: JSON.stringify({ target_path: '/api/v0/chat/completion' })
     });
     const text = await r.text();
-    checks.push({ name: 'pow challenge', ok: r.ok && /biz_data|challenge/.test(text), status: r.status });
+    let challenge = null;
+    try { challenge = JSON.parse(text)?.data?.biz_data?.challenge || null; } catch {}
+    // An expired login still answers 200 with "biz_data": null; only a real
+    // challenge proves the credentials work.
+    checks.push({ name: 'pow challenge', ok: r.ok && Boolean(challenge), status: r.status, detail: challenge ? '' : text.substring(0, 120) });
   } catch (e) {
     checks.push({ name: 'pow challenge', ok: false, error: e.message });
   }
@@ -84,17 +85,18 @@ async function main(args = process.argv.slice(2)) {
       ok = false;
       for (const issue of r.issues) console.log(`  ❌ ${issue}`);
     }
-    if (r.note) console.log(`  ⚠ ${r.note}`);
     if (!offline && r.auth && r.ok) {
       const checks = await liveCheck(r.auth);
       for (const c of checks) {
         if (c.ok) console.log(`  ✅ live ${c.name}: HTTP ${c.status}`);
-        else { ok = false; console.log(`  ❌ live ${c.name}: ${c.error || `HTTP ${c.status}`}`); }
+        else { ok = false; console.log(`  ❌ live ${c.name}: ${c.error || `HTTP ${c.status}${c.detail ? ` — ${c.detail}` : ''}`} (run npm run auth or npm run auth:import)`); }
       }
     }
   }
   console.log('\nSession reuse: one x-agent-session/user => one DeepSeek chat until TTL/message limit/error reset.');
-  console.log('Reset: curl -X POST "http://localhost:9655/reset-session?agent=all"');
+  const port = process.env.PORT || 9655;
+  const keyHeader = process.env.PROXY_API_KEY || process.env.PROXY_API_KEY_FILE ? ' -H "Authorization: Bearer $PROXY_API_KEY"' : '';
+  console.log(`Reset: curl -X POST${keyHeader} "http://localhost:${port}/reset-session?agent=all"`);
   console.log('VPS: import auth on server, then run NON_INTERACTIVE=1 npm start');
   return ok ? 0 : 2;
 }

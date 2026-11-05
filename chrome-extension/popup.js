@@ -3,6 +3,29 @@ function $(id) { return document.getElementById(id); }
 const API_BASE = 'http://localhost:9655';
 const PROXY_URL = API_BASE + '/api/accounts/import';
 
+
+let proxyKey = '';
+let keyRequest = null;
+async function proxyFetch(input, options = {}) {
+    const headers = new Headers(options.headers);
+    if (proxyKey) headers.set('Authorization', 'Bearer ' + proxyKey);
+    let response = await fetch(input, { ...options, headers });
+    if (response.status !== 401) return response;
+    if (!keyRequest) {
+        keyRequest = Promise.resolve().then(() => {
+            const value = window.prompt('Введите ключ локального прокси (PROXY_API_KEY или DEEPSEEK_API_KEY). Ключ хранится только до закрытия этого окна.');
+            return value ? value.trim() : '';
+        });
+    }
+    const requested = keyRequest;
+    const key = await requested;
+    if (keyRequest === requested) keyRequest = null;
+    if (!key) return response;
+    proxyKey = key;
+    headers.set('Authorization', 'Bearer ' + key);
+    return fetch(input, { ...options, headers });
+}
+
 let current = null; // перехваченный набор кредов {token,cookie,hif_*,wasmUrl}
 
 function setStatus(cls, text) { $('status').className = 'status ' + cls; $('status').textContent = text; }
@@ -75,7 +98,7 @@ function renderPool(list) {
 
 async function loadPool() {
     try {
-        const r = await fetch(API_BASE + '/api/accounts');
+        const r = await proxyFetch(API_BASE + '/api/accounts');
         const j = await r.json();
         setSrvDot(true);
         renderPool(j.accounts || []);
@@ -91,7 +114,7 @@ async function checkAccount(id) {
     const b = row && row.querySelector('.badge');
     if (b) { b.className = 'badge checking'; b.textContent = '…'; }
     try {
-        const r = await fetch(`${API_BASE}/api/accounts/${id}/check`, { method: 'POST' });
+        const r = await proxyFetch(`${API_BASE}/api/accounts/${id}/check`, { method: 'POST' });
         const j = await r.json();
         if (b) { b.className = 'badge ' + (j.status || '').toLowerCase(); b.textContent = j.status || '—'; }
         if (j.email && row) { const em = row.querySelector('.email'); em.textContent = j.email; em.title = j.email; }
@@ -100,7 +123,7 @@ async function checkAccount(id) {
 }
 
 async function deleteAccount(id) {
-    try { await fetch(`${API_BASE}/api/accounts/${id}`, { method: 'DELETE' }); } catch { /* noop */ }
+    try { await proxyFetch(`${API_BASE}/api/accounts/${id}`, { method: 'DELETE' }); } catch { /* noop */ }
     loadPool();
 }
 
@@ -143,7 +166,7 @@ $('btnAdd').addEventListener('click', async () => {
     }
     setStatus('warn', '⏳ Отправка в FreeDeepseekAPI…');
     try {
-        const r = await fetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(current) });
+        const r = await proxyFetch(PROXY_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(current) });
         const j = await r.json();
         if (j.ok) {
             const who = j.email ? ` (${j.email})` : '';
@@ -177,7 +200,7 @@ $('btnSave').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(current, null, 2) + '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'deepseek-auth.json'; a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
 });
 
 refresh();

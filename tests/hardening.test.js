@@ -11,7 +11,7 @@ test('resetSession nulls session/id state and zeroes messageCount', () => {
   const s = S.createSession();
   s.id = 'sess'; s.parentMessageId = 'm1'; s.createdAt = 123; s.messageCount = 7;
   s.history.push({ user: 'u', assistant: 'a' });
-  S.resetSession(s);
+  S.resetRemoteSession(s);
   assert.equal(s.id, null);
   assert.equal(s.parentMessageId, null);
   assert.equal(s.createdAt, null);
@@ -47,14 +47,14 @@ test('corsOriginFor echoes same-origin only, rejects foreign', () => {
   const same = { headers: { origin: 'http://localhost:9655', host: 'localhost:9655' } };
   const foreign = { headers: { origin: 'http://evil.example', host: 'localhost:9655' } };
   const none = { headers: { host: 'localhost:9655' } };
-  assert.equal(S.corsOriginFor(same), 'http://localhost:9655');
-  assert.equal(S.corsOriginFor(foreign), null);
-  assert.equal(S.corsOriginFor(none), null);
+  assert.equal(S.isBrowserOriginAllowed(same.headers.origin), true);
+  assert.equal(S.isBrowserOriginAllowed(foreign.headers.origin), false);
+  assert.equal(S.isBrowserOriginAllowed(none.headers.origin), true);
 });
 
 // --- isAuthorized open when no API key configured (back-compat default) ---
 test('isAuthorized passes when DEEPSEEK_API_KEY is unset', () => {
-  assert.equal(S.isAuthorized({ headers: {} }), true);
+  assert.equal(S.isProxyAuthorized(undefined), true);
 });
 
 // --- sweepIdleSessions drops stale, keeps fresh ---

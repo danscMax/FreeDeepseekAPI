@@ -272,6 +272,29 @@
 <script>
 const $ = s => document.querySelector(s);
 const origin = location.origin;
+
+let proxyKey = '';
+let keyRequest = null;
+async function proxyFetch(input, options = {}) {
+    const headers = new Headers(options.headers);
+    if (proxyKey) headers.set('Authorization', 'Bearer ' + proxyKey);
+    let response = await fetch(input, { ...options, headers });
+    if (response.status !== 401) return response;
+    if (!keyRequest) {
+        keyRequest = Promise.resolve().then(() => {
+            const value = window.prompt('Введите ключ локального прокси (PROXY_API_KEY или DEEPSEEK_API_KEY). Ключ хранится только до закрытия этого окна.');
+            return value ? value.trim() : '';
+        });
+    }
+    const requested = keyRequest;
+    const key = await requested;
+    if (keyRequest === requested) keyRequest = null;
+    if (!key) return response;
+    proxyKey = key;
+    headers.set('Authorization', 'Bearer ' + key);
+    return fetch(input, { ...options, headers });
+}
+
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const icon = id => `<svg class="ic"><use href="#${id}"/></svg>`;
 function toast(m, kind){ const t=$('#toast'); t.innerHTML=(kind==='err'?icon('i-warn'):kind==='ok'?icon('i-check'):'')+'<span>'+esc(m)+'</span>'; t.className='toast show'+(kind?' '+kind:''); clearTimeout(toast._t); toast._t=setTimeout(()=>t.className='toast',1900); }
@@ -326,7 +349,7 @@ $('#copyPy').onclick=()=>copyText(`from openai import OpenAI\nclient = OpenAI(ba
 let healthCache=null;
 async function loadHealth(){
   try{
-    const j=await (await fetch(origin+'/health')).json(); healthCache=j;
+    const j=await (await proxyFetch(origin+'/health')).json(); healthCache=j;
     const n=(j.models||[]).length;
     // /health.accounts is an ARRAY of {id, ready, cooldown, ...} — not {online,total}.
     // Derive the counts from it (was reading ac.online/ac.total → always 0/0).
@@ -344,7 +367,7 @@ function fmtExp(ms){ if(!ms) return ''; const d=Math.round((ms-Date.now())/864e5
 async function loadAuth(){
   const box=$('#authBox');
   try{
-    const j=await (await fetch(origin+'/api/auth-status')).json();
+    const j=await (await proxyFetch(origin+'/api/auth-status')).json();
     if(!j.config_ready){ box.innerHTML='<div class="onboard">Авторизация не настроена. Запустите <b>Авторизация DeepSeek.bat</b> и войдите в свой аккаунт DeepSeek.</div>'; return; }
     const exp=j.token_exp?('<div class="row"><label class="k">Срок токена</label><div class="val">'+esc(fmtExp(j.token_exp))+'</div></div>'):'';
     box.innerHTML=`<div class="row"><label class="k">Токен</label><div class="val">${j.has_token?'есть ✓':'нет'}</div></div>
@@ -358,7 +381,7 @@ function fmtResetAt(iso){ try{ return new Date(iso).toLocaleString('ru-RU',{day:
 async function loadAccountsList(){
   const list=$('#accList');
   try{
-    const j=await (await fetch(origin+'/api/accounts')).json();
+    const j=await (await proxyFetch(origin+'/api/accounts')).json();
     if(!j.accounts||!j.accounts.length){ list.innerHTML='<div class="onboard">Пока нет аккаунтов. Добавьте первый через импорт ниже.</div>'; return; }
     list.innerHTML=j.accounts.map(a=>{
       const meta=a.resetAt?('лимит до '+fmtResetAt(a.resetAt)):(a.exp?fmtExp(a.exp):'');
@@ -375,15 +398,15 @@ async function loadAccountsList(){
 function setAccUpdated(){ const e=$('#accUpdated'); if(e) e.textContent='обновлено '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
 $('#checkAllAcc').onclick=async()=>{
   const b=$('#checkAllAcc'); b.disabled=true;
-  try{ const j=await (await fetch(origin+'/api/accounts')).json();
-    for(const a of (j.accounts||[])){ try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(a.id)+'/check',{method:'POST'}); }catch{} }
+  try{ const j=await (await proxyFetch(origin+'/api/accounts')).json();
+    for(const a of (j.accounts||[])){ try{ await proxyFetch(origin+'/api/accounts/'+encodeURIComponent(a.id)+'/check',{method:'POST'}); }catch{} }
     await loadAccountsList(); await loadHealth(); toast('Проверка завершена','ok');
   }catch{ toast('Ошибка','err'); } b.disabled=false;
 };
 $('#importBtn').onclick=async()=>{
   const text=$('#importText').value.trim(); if(!text) return toast('Вставьте cURL или HAR','err');
   const b=$('#importBtn'); b.disabled=true;
-  try{ const j=await (await fetch(origin+'/api/accounts/import',{method:'POST',headers:{'Content-Type':'text/plain'},body:text})).json();
+  try{ const j=await (await proxyFetch(origin+'/api/accounts/import',{method:'POST',headers:{'Content-Type':'text/plain'},body:text})).json();
     if(j.ok){ toast('Добавлен '+j.id,'ok'); $('#importText').value=''; loadAccountsList(); loadHealth(); } else toast(j.error||'Ошибка импорта','err');
   }catch{ toast('Сеть недоступна','err'); } b.disabled=false;
 };
@@ -396,7 +419,7 @@ document.addEventListener('click', async e=>{
     acc.insertBefore(inp, acc.querySelector('.spacer')); inp.focus(); inp.select();
     inp.addEventListener('keydown', async ev=>{
       if(ev.key==='Enter'){ ev.preventDefault();
-        try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.label)+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:inp.value})}); toast('Имя сохранено','ok'); }catch{ toast('Ошибка','err'); }
+        try{ await proxyFetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.label)+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:inp.value})}); toast('Имя сохранено','ok'); }catch{ toast('Ошибка','err'); }
         loadAccountsList();
       } else if(ev.key==='Escape'){ loadAccountsList(); }
     });
@@ -404,11 +427,11 @@ document.addEventListener('click', async e=>{
     return;
   }
   if(t.dataset.check){ const acc=t.closest('.acc'); const badge=acc&&acc.querySelector('.badge'); if(badge){ badge.className='badge checking'; badge.textContent='проверка'; } t.disabled=true;
-    try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.check)+'/check',{method:'POST'}); }catch{} await loadAccountsList(); await loadHealth(); return; }
+    try{ await proxyFetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.check)+'/check',{method:'POST'}); }catch{} await loadAccountsList(); await loadHealth(); return; }
   if(t.dataset.del){
     if(t.dataset.confirm!=='1'){ t.dataset.confirm='1'; t.classList.add('danger'); t.innerHTML=icon('i-trash')+'точно?'; setTimeout(()=>{ if(t.dataset.confirm==='1'){ t.dataset.confirm=''; t.classList.remove('danger'); t.innerHTML=icon('i-trash'); } },3000); return; }
     t.disabled=true;
-    try{ await fetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.del),{method:'DELETE'}); toast('Удалён','ok'); }catch{ toast('Ошибка','err'); } loadAccountsList(); loadHealth(); return; }
+    try{ await proxyFetch(origin+'/api/accounts/'+encodeURIComponent(t.dataset.del),{method:'DELETE'}); toast('Удалён','ok'); }catch{ toast('Ошибка','err'); } loadAccountsList(); loadHealth(); return; }
 });
 setInterval(()=>{
   if(!$('#tab-accounts').classList.contains('active')) return;
@@ -421,7 +444,7 @@ setInterval(()=>{
 async function loadModels(){
   const list=$('#modelList');
   try{
-    const j=await (await fetch(apiBase+'/models')).json();
+    const j=await (await proxyFetch(apiBase+'/models')).json();
     const data=j.data||[];
     $('#modelCount').textContent=data.length;
     list.innerHTML=data.map(m=>{
@@ -435,7 +458,7 @@ async function loadModels(){
 async function populateChatModels(){
   const sel=$('#chatModel'); if(!sel) return;
   try{
-    const j=await (await fetch(apiBase+'/models')).json();
+    const j=await (await proxyFetch(apiBase+'/models')).json();
     const data=j.data||[]; if(!data.length) return;
     const saved=localStorage.getItem('ds_model');
     sel.innerHTML=data.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join('');
@@ -501,7 +524,7 @@ async function sendChat(){
 
   const msgs=chatHistory.slice(0,-1).map(m=>({role:m.role,content:m.content}));
   try{
-    const r=await fetch(apiBase+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer sk-deepseek'},signal:chatAbort.signal,
+    const r=await proxyFetch(apiBase+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer sk-deepseek'},signal:chatAbort.signal,
       body:JSON.stringify({model:$('#chatModel').value,messages:msgs,stream:true,user:AGENT_ID})});
     if(!r.ok||!r.body){
       // Понятная подсказка вместо сырого кода: чаще всего это лимит/отсутствие авторизации.
@@ -532,7 +555,7 @@ $('#chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey
 $('#clearChat').onclick=async()=>{
   if(chatBusy) chatAbort?.abort();
   chatHistory=[]; renderChat();
-  try{ await fetch(origin+'/reset-session?agent='+encodeURIComponent(AGENT_ID),{method:'POST'}); }catch{}
+  try{ await proxyFetch(origin+'/reset-session?agent='+encodeURIComponent(AGENT_ID),{method:'POST'}); }catch{}
 };
 
 // ── Утилиты UI ───────────────────────────────────────────────────────────────
