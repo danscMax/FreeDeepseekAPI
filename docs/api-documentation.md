@@ -1,5 +1,11 @@
 # DeepSeek Web API Proxy — Complete Documentation
 
+> ⚠️ **Outdated — see [README.md](../README.md) for the current, authoritative docs.**
+> This file describes an older private deployment and is kept only for historical
+> reference. Known drift: the proxy listens on **port 9655** (not 9654); model ids
+> are `deepseek-chat` / `deepseek-reasoner` / `deepseek-expert` / … (not
+> `deepseek-web-v3`); session limits and the example host/IP below no longer apply.
+
 ## Overview
 
 This project reverse-engineers the **DeepSeek Web chat API** (`chat.deepseek.com`) to expose it as OpenAI/Anthropic-compatible local API endpoints. It allows compatible clients (Hermes agents, Claude Code, OpenAI SDK/Responses-style clients, custom scripts, etc.) to use DeepSeek's free web model as if it were a paid API — including tool calling, streaming, reasoning output, and multi-session support.

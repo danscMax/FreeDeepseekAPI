@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { decodeTokenInfo } = require('../lib/jwt');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_AUTH = process.env.DEEPSEEK_AUTH_PATH || path.join(ROOT, 'deepseek-auth.json');
@@ -28,11 +29,19 @@ function checkAuthFile(file) {
   if (!auth.token) issues.push('token missing');
   if (!auth.cookie) issues.push('cookie missing');
   if (!auth.wasmUrl) issues.push('wasmUrl missing');
+  // Catch an expired token offline so doctor doesn't report "OK" on a dead account.
+  // Near-expiry is a non-failing note (doesn't flip ok) so it doesn't break CI.
+  let note = null;
+  if (auth.token) {
+    const { exp } = decodeTokenInfo(auth.token);
+    if (exp && exp <= Date.now()) issues.push(`token expired (${new Date(exp).toISOString().slice(0, 10)})`);
+    else if (exp && exp - Date.now() < 48 * 3600 * 1000) note = `token expires soon (${new Date(exp).toISOString().slice(0, 10)}) — consider re-auth`;
+  }
   if (process.platform !== 'win32') {
     const mode = fs.statSync(file).mode & 0o777;
     if ((mode & 0o077) !== 0) issues.push(`permissions too open: ${mode.toString(8)} (run: chmod 600 ${file})`);
   }
-  return { file, ok: issues.length === 0, issues, auth };
+  return { file, ok: issues.length === 0, issues, note, auth };
 }
 async function liveCheck(auth) {
   const headers = {
@@ -75,6 +84,7 @@ async function main(args = process.argv.slice(2)) {
       ok = false;
       for (const issue of r.issues) console.log(`  ❌ ${issue}`);
     }
+    if (r.note) console.log(`  ⚠ ${r.note}`);
     if (!offline && r.auth && r.ok) {
       const checks = await liveCheck(r.auth);
       for (const c of checks) {
